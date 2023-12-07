@@ -1,0 +1,3 @@
+interface IParsms {
+  id: string;
+}

@@ -6,6 +6,8 @@ import {
   getBrandsHandler,
   getNewBrandIdHandler,
   updateBrandByIdHandler,
+  Brand_drop_down_Handler,
+  getBrandsHandlerPagination
 } from './brand.controller';
 import { $ref } from './brand.schema';
 
@@ -38,6 +40,21 @@ const brandRoutes = async (server: FastifyInstance) => {
     getNewBrandIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Brand'],
+        security: [{ bearerToken: [] }],
+        body:$ref('brandPaginationSchema')
+        // response: {
+        //   200: $ref('getBrandsSchema'),
+        // },
+      },
+    },
+    getBrandsHandlerPagination
+  );
   server.get(
     '/',
     {
@@ -110,6 +127,30 @@ const brandRoutes = async (server: FastifyInstance) => {
     },
     updateBrandByIdHandler
   );
+
+  server.post(
+    '/drop_down',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Brand'],
+        security: [{ bearerToken: [] }],
+        body: $ref('brand_drop_down_Schema'),
+        response: {
+          201: $ref('brand_drop_down_Schema'),
+        },
+      },
+    },
+    Brand_drop_down_Handler
+  );
+
+
+
+
+
+
+
+
 };
 
 export default brandRoutes;

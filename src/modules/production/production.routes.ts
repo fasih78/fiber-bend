@@ -3,7 +3,7 @@ import {
   createProductionHandler,
   deleteProductionByIdHandler,
   deleteProductionsHandler,
- // getProductionsHandler,
+  // getProductionsHandler,
   getNewProductionIdHandler,
   updateProductionByIdHandler,
   findProductionsDtlsHandler,
@@ -11,7 +11,8 @@ import {
   getLotNumHandler,
   findProductionsisDeletedDtlsByDateHandler,
   ProductionpaginaionHandler,
-  findProductionsDtlsPrintByDateHandler
+  findProductionsDtlsPrintByDateHandler,
+  productionLotQtyAdjustHandler
 } from './production.controller';
 import { $ref } from './production.schema';
 
@@ -51,7 +52,7 @@ const productiontRoutes = async (server: FastifyInstance) => {
       schema: {
         tags: ['Production'],
         security: [{ bearerToken: [] }],
-          body: $ref('productionpageSchema'),
+        body: $ref('productionpageSchema'),
         // response: {
         //   200: $ref('getProductionsSchema'),
         // },
@@ -179,7 +180,6 @@ const productiontRoutes = async (server: FastifyInstance) => {
     findProductionsisDeletedDtlsByDateHandler
   );
 
-
   server.post(
     '/details/dtl-by-date-print',
     {
@@ -194,29 +194,20 @@ const productiontRoutes = async (server: FastifyInstance) => {
   );
 
 
+  server.post(
+    '/lot-qty-adjust',
 
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Production'],
+        body: $ref('productionLotQtyAdjustSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+    productionLotQtyAdjustHandler
+  );
 
-
-
-
-
-
-
-
-
-
-
-  
 };
-
-
-
-
-
-
-
-
-
-
 
 export default productiontRoutes;

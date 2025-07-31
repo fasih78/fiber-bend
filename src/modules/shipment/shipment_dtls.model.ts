@@ -4,6 +4,7 @@ import { ProductModel } from '../product/product.model';
 import { CurrencyModel } from '../currency/currency.model';
 import { CustomerModel } from '../customer/customer.model';
 import { SalesContractModel } from '../sales_contract/sales_contract.model';
+import { BrandModel } from '../brand/brand.model';
 
 export class ShipmentDtl {
   @prop({
@@ -20,6 +21,14 @@ export class ShipmentDtl {
     type: Number,
   })
   amount: number;
+  @prop({
+    type: String,
+  })
+  gpNumber: string;
+  @prop({
+    type: String,
+  })
+  dcNumber: string;
 
   // @prop({
   //   type: Number,
@@ -50,7 +59,27 @@ export class ShipmentDtl {
     type: Date,
   })
   gpDate: Date;
+  @prop({
+    type: Boolean,
+    default:false
+  })
+  adm_ship: boolean;
 
+  @prop({
+    type: String,
+  })
+  supplierCode: string;
+  
+  @prop({
+    type: Number,
+  })
+  royaltyRate: number;
+
+  @prop({
+    type: Boolean,
+    default:false
+  })
+  return: boolean;
 
   @prop({ ref: () => CustomerModel })
   customer: Ref<typeof CustomerModel>;
@@ -63,6 +92,9 @@ export class ShipmentDtl {
 
   @prop({ ref: () => ShipmentModel })
   shipment: Ref<typeof ShipmentModel>;
+  
+  @prop({ ref: () => BrandModel })
+  brand: Ref<typeof BrandModel>;
   
   @prop({ ref: () => SalesContractModel })
   salesContract: Ref<typeof SalesContractModel>;

@@ -5,6 +5,7 @@ import {
   deleteStatesHandler,
   getNewStateIdHandler,
   getStatesHandler,
+  getStatesHandlerPagination,
   updateStateByIdHandler,
 } from './state.controller';
 import { $ref } from './state.schema';
@@ -39,6 +40,21 @@ const stateRoutes = async (server: FastifyInstance) => {
     getNewStateIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['State'],
+        security: [{ bearerToken: [] }],
+        body:$ref('statePaginationSchema')
+        // response: {
+        //   200: $ref('getStatesSchema'),
+        // },
+      },
+    },
+    getStatesHandlerPagination
+  );
   server.get(
     '/',
     {

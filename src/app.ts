@@ -3,7 +3,10 @@ import { config } from './utils/config';
 import createServer from './utils/create_server';
 import { logger } from './utils/logger';
 import { connectToDb, disconnectFromDb } from './utils/db';
-
+import * as fastifySession from 'fastify-session';
+const fastifyCookie = require('@fastify/cookie');
+// const fastify = require('fastify')();
+const fastify = require('fastify')();
 const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 
 async function gracefulShutdown({
@@ -21,6 +24,8 @@ async function gracefulShutdown({
   process.exit(0);
 }
 
+
+fastify.register(fastifyCookie);
 const startServer = async () => {
   const server = await buildServer();
 

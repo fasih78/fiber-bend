@@ -8,6 +8,7 @@ import {
   //findPayementHandler,
   getNewPaymentIdHandler,
   //royalitynotPayementHandler,
+  findPaymentbyIdHandler,
   findPaymentDtlsByDateHandler,
   findextraPayementHandler,
   PaymentPaginationHandler,
@@ -31,7 +32,26 @@ const paymentRoutes = async (server: FastifyInstance) => {
     },
     createPaymentHandler
   );
-
+  server.get(
+    '/details/:id',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Payment'],
+        params: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: 'user id',
+            },
+          },
+        },
+        security: [{ bearerToken: [] }],
+      },
+    },
+    findPaymentbyIdHandler
+  );
   server.post(
     '/Pagination',
     {
@@ -148,13 +168,13 @@ const paymentRoutes = async (server: FastifyInstance) => {
     findPaymentDtlsByDateHandler
   );
 
-  server.get(
+  server.post(
     '/extrapayment',
     {
       preHandler: [server.authenticate],
       schema: {
         tags: ['Payment'],
-
+        body: $ref('extrapaymentdrop_downSchema'),
         security: [{ bearerToken: [] }],
         // response: {
         //   200: $ref('createPaymentSchema'),
@@ -163,6 +183,9 @@ const paymentRoutes = async (server: FastifyInstance) => {
     },
     findextraPayementHandler
   );
+
+
+
 };
 
 export default paymentRoutes;

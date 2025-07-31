@@ -9,6 +9,7 @@ export class Currency {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
 }

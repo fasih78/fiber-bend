@@ -1,4 +1,4 @@
-import mongoose, { Mongoose, model } from 'mongoose';
+import mongoose, { Aggregate, Mongoose, model } from 'mongoose';
 import { Royality, RoyalityModel } from './royality.model';
 import {
   CreateRoyalitySchema,
@@ -9,6 +9,7 @@ import {
   RoyalityPaginationSchema,
   RoyalityReportSchema,
   RoyalityReportPrintSchema,
+  UpdateRoyalitySchema,
 } from './royality.schema';
 import { Payment, PaymentModel } from '../payment/payment.model';
 import { InvoiceDtlModel } from '../invoice/invoice_dtl.model';
@@ -25,7 +26,7 @@ import { Invoice, InvoiceModel } from '../invoice/invoice.model';
 import { BrandModel } from '../brand/brand.model';
 import { ProductModel } from '../product/product.model';
 import { CurrencyModel } from '../currency/currency.model';
-import _ from 'lodash';
+import _, { cloneWith } from 'lodash';
 import { payementSchema } from '../payment/payement.schema';
 import invoiceRoutes from '../invoice/invoice.routes';
 import { PaymentTermModel } from '../payment_term/payment_term.model';
@@ -33,8 +34,10 @@ import moment from 'moment';
 import { RoyalityAdmModel } from './royalityAdmDenim.model';
 import { R } from 'vitest/dist/types-c800444e';
 import { setFlagsFromString } from 'v8';
+import { pipeline } from 'stream';
+import { lookup } from 'dns';
 
-export const createRoyality = async (input: CreateRoyalitySchema) => {
+export const createRoyalityPrac = async (input: CreateRoyalitySchema) => {
   const {
     id,
     paid,
@@ -42,27 +45,20 @@ export const createRoyality = async (input: CreateRoyalitySchema) => {
     paymentDate1,
     payment,
     invoice,
+    amount,
     saletaxinvoicedate,
     royalityrate,
   } = input;
+  console.log(input);
 
-  const paymentModel = await PaymentModel.findById(payment);
 
-  const invoiceDtls = await InvoiceDtlModel.aggregate([
-    { $match: { invoice: paymentModel?.invoice } },
-    {
-      $group: {
-        _id: '$invoice',
-        invoice: { $first: '$invoice' },
-        amount: { $sum: '$amount' },
-        salesTaxAmount: { $sum: '$salesTaxAmount' },
-      },
-    },
-  ]);
-  const amount = (invoiceDtls[0].amount * 15) / 100;
   const saletax = await InvoiceModel.findOne({ _id: invoice });
 
   const sales_contract = await InvoiceModel.findOne({ _id: invoice });
+
+  const sale_contract = await SalesContractModel.findOne({
+    _id: sales_contract?.salesContract,
+  });
 
   const sale = await InvoiceModel.findOne({ _id: invoice });
   const Customer = await SalesContractModel.findOne({
@@ -82,10 +78,41 @@ export const createRoyality = async (input: CreateRoyalitySchema) => {
     saletaxinvoicedate,
     payment: new mongoose.Types.ObjectId(payment),
     invoice: new mongoose.Types.ObjectId(invoice),
-    salesContract: new mongoose.Types.ObjectId(sales_contract?.salesContract),
-    customer: new mongoose.Types.ObjectId(Customer?.customer),
-    product: new mongoose.Types.ObjectId(product?.product),
+    salesContract: sales_contract?.salesContract
+      ? new mongoose.Types.ObjectId(
+        (sales_contract.salesContract as any)?._id ||
+        sales_contract.salesContract
+      )
+      : undefined,
+
+    customer: Customer?.customer
+      ? new mongoose.Types.ObjectId(
+        (typeof Customer.customer === 'object' && '_id' in Customer.customer
+          ? Customer.customer._id
+          : Customer.customer
+        ).toString()
+      )
+      : undefined,
+
+    product: product?.product
+      ? new mongoose.Types.ObjectId(
+        (typeof product.product === 'object' && '_id' in product.product
+          ? product.product._id
+          : product.product
+        ).toString()
+      )
+      : undefined,
+
+    brand: Customer?.brand
+      ? new mongoose.Types.ObjectId(
+        (typeof Customer.brand === 'object' && '_id' in Customer.brand
+          ? Customer.brand._id
+          : Customer.brand
+        ).toString()
+      )
+      : undefined,
     amount,
+    contract: sale_contract?.contract,
     salesTaxInvoiceNo: saletax?.salesTaxInvoiceNo,
     royalityrate,
   });
@@ -103,20 +130,37 @@ export const createRoyality = async (input: CreateRoyalitySchema) => {
       });
     }
   }
-
+  const salecontract = sales_contract?.salesContract;
+  const royality_nonAdm = await SalesContractModel.updateOne(
+    { _id: salecontract },
+    {
+      $set: {
+        royality_nonadm: true,
+      },
+    }
+  );
+  const royality_nonAdm1 = await SalesContractDtlModel.updateOne(
+    { salesContract: salecontract },
+    {
+      $set: {
+        royality_nonadm: true,
+      },
+    }
+  );
   return royality;
 };
 
 export const createRoyalityAdmDenim = async (
   input: CreateRoyalityAdmDenimSchema
 ) => {
-  const { salesContract, royalityrate, customer } = input;
-
+  const { salesContract, royalityrate, customer, shipment_date, amount } =
+    input;
+  console.log(input, 'request');
   const sales = await SalesContractModel.findOne({ _id: input.salesContract });
   const dtl = await SalesContractDtlModel.findOne({
     salesContract: sales?._id,
   });
-  console.log(dtl?.product, 'product id');
+
   const LastUser = await RoyalityModel.findOne().sort({ _id: -1 });
   const id = LastUser ? LastUser.id + 1 : 1;
 
@@ -127,42 +171,304 @@ export const createRoyalityAdmDenim = async (
     _id: salesContract,
   });
   const saletaxinvoice = saleinvoice?.salesTaxInvoiceNo;
-  const extracted = salecontract?.amount;
+  const extracted: any = salecontract?.amount;
 
-  const amount = (extracted * 15) / 100;
+  const sale_contract = await SalesContractModel.findOne({
+    _id: salesContract,
+  });
+
+  // const amount = (extracted * 15) / 100;
 
   const royality = await RoyalityModel.create({
     id: id,
-    saletaxinvoicedate: moment(new Date()).format('YYYY-MM-DD'),
+    saletaxinvoicedate: moment(saleinvoice?.contractDate).format('YYYY-MM-DD'),
     salesContract: new mongoose.Types.ObjectId(salesContract),
     amount: amount,
     royalityrate: royalityrate,
     paid: true,
     InHouse: true,
+    shipment_date: input?.shipment_date,
     customer: new mongoose.Types.ObjectId(customer),
     product: new mongoose.Types.ObjectId(dtl.product),
+    brand: new mongoose.Types.ObjectId(sale_contract?.brand),
     salesTaxInvoiceNo: saletaxinvoice,
+    contract: sale_contract?.contract,
   });
   const sale = await SalesContractModel.findByIdAndUpdate(salesContract, {
     royality: true,
   });
+  const saledtl = await SalesContractDtlModel.updateOne(
+    { salesContract: new mongoose.Types.ObjectId(salesContract) },
+    {
+      royality: true,
+    }
+  );
+  return royality;
+};
+export const createRoyality = async (input: CreateRoyalitySchema) => {
+  const { invoice } = input;
+
+  try {
+    const customer_find = await InvoiceDtlModel.findOne({ invoice: invoice });
+    const customerobjectid = customer_find?.customer;
+
+    if (customerobjectid instanceof mongoose.Types.ObjectId) {
+      if (
+        customerobjectid.equals(
+          new mongoose.Types.ObjectId('648d7c960cee8c1de3294415')
+        )
+      ) {
+        console.log('InHouse ', 'true');
+
+        const {
+          id,
+          paid,
+          paymentDate,
+          shipment_date,
+          payment,
+          invoice,
+          amount,
+          saletaxinvoicedate,
+          royalityrate,
+          salesContract,
+          customer,
+        } = input;
+        console.log(input, 'request from frontened create');
+
+        const saletax = await InvoiceModel.findOne({ _id: invoice });
+
+        const sale_contract = await SalesContractModel.findOne({
+          _id: salesContract,
+        });
+        const sale_product = await SalesContractDtlModel.findOne({
+          salesContract: salesContract,
+        });
+
+        const royality = await RoyalityModel.create({
+          id: id,
+          saletaxinvoicedate: moment(saletaxinvoicedate).format('YYYY-MM-DD'),
+          paymentDate: moment(paymentDate).format('YYYY-MM-DD'),
+          salesContract: new mongoose.Types.ObjectId(salesContract),
+          amount: amount,
+          royalityrate: royalityrate,
+          paid: paid,
+          InHouse: true,
+          shipment_date: moment(input.shipment_date).format('YYYY-MM-DD'),
+          invoice: new mongoose.Types.ObjectId(invoice),
+          payment: new mongoose.Types.ObjectId(payment),
+          customer: new mongoose.Types.ObjectId(customer),
+          product: new mongoose.Types.ObjectId(sale_product.product),
+          brand: new mongoose.Types.ObjectId(sale_product?.brand),
+          salesTaxInvoiceNo: saletax?.salesTaxInvoiceNo,
+          contract: sale_contract?.contract,
+        });
+        const royality1 = await RoyalityModel.find({
+          payment: payment,
+          isDeleted: false,
+        });
+
+        for (let royality of royality1) {
+          const dtl = await RoyalityModel.find({ payment: royality._id });
+          if (dtl) {
+            const payment1 = await PaymentModel.findByIdAndUpdate(payment, {
+              royality: true,
+            });
+          }
+        }
+        const sale = await SalesContractModel.findByIdAndUpdate(salesContract, {
+          royality: true,
+        });
+        const saledtl = await SalesContractDtlModel.updateOne(
+          { salesContract: new mongoose.Types.ObjectId(salesContract) },
+          {
+            royality: true,
+          }
+        );
+        return royality;
+      } else {
+       
+        const {
+          id,
+          paid,
+          paymentDate,
+          payment,
+          invoice,
+          shipment_date,
+          amount,
+          saletaxinvoicedate,
+          royalityrate,
+          salesContract,
+          customer,
+        } = input;
+
+        console.log('InHouse ', 'false');
+        console.log(customer, 'customer from frontend');
+        const customer_find = await CustomerModel.findOne({_id: customer });
+        if (!customer_find) {
+          throw new Error('Customer not found');
+          
+        }
+
+        const saletax = await InvoiceModel.findOne({ _id: invoice });
+
+        const sales_contract = await InvoiceModel.findOne({ _id: invoice });
+
+        const sale_contract = await SalesContractModel.findOne({
+          _id: salesContract,
+        });
+
+        const sale = await InvoiceModel.findOne({ _id: invoice });
+        const Customer = await SalesContractModel.findOne({
+          _id: salesContract,
+        });
+
+        const sale_product = await InvoiceModel.findOne({ _id: invoice });
+        const product = await SalesContractDtlModel.findOne({
+          salesContract: sale_product?.salesContract,
+        });
+
+        const royality = await RoyalityModel.create({
+          id,
+          paid,
+          paymentDate,
+          paymentDate1: paid ? 'Paid' : 'Unpaid',
+          saletaxinvoicedate,
+          shipment_date: moment(input.shipment_date).format('YYYY-MM-DD'),
+          payment: new mongoose.Types.ObjectId(payment),
+          invoice: new mongoose.Types.ObjectId(invoice),
+          salesContract: new mongoose.Types.ObjectId(salesContract),
+          customer: new mongoose.Types.ObjectId(customer),
+          product: new mongoose.Types.ObjectId(product?.product),
+          brand: new mongoose.Types.ObjectId(Customer?.brand),
+          amount,
+          contract: sale_contract?.contract,
+          salesTaxInvoiceNo: saletax?.salesTaxInvoiceNo,
+          royalityrate,
+          InHouse: false,
+        });
+
+        const royality1 = await RoyalityModel.find({
+          payment: payment,
+          isDeleted: false,
+        });
+
+        for (let royality of royality1) {
+          const dtl = await RoyalityModel.find({ payment: royality._id });
+          if (dtl) {
+            const payment1 = await PaymentModel.findByIdAndUpdate(payment, {
+              royality: true,
+            });
+          }
+        }
+        const salecontract = sales_contract?.salesContract;
+        const royality_nonAdm = await SalesContractModel.updateOne(
+          { _id: salecontract },
+          {
+            $set: {
+              royality_nonadm: true,
+            },
+          }
+        );
+        const royality_nonAdm1 = await SalesContractDtlModel.updateOne(
+          { salesContract: salecontract },
+          {
+            $set: {
+              royality_nonadm: true,
+            },
+          }
+        );
+        return royality;
+      }
+    }
+  } catch (error) {
+    console.log(error);
+  }
 };
 
 export const updateRoyalityById = async (
   id: string,
-  input: CreateRoyalitySchema
+  input: UpdateRoyalitySchema
 ) => {
-  const { paid, paymentDate, payment, paymentDate1, royalityrate } = input;
-
-  const royalityupdate = await RoyalityModel.findByIdAndUpdate(id, {
+  const {
+    customer,
+    salesContract,
+    invoice,
+    payment,
     paid,
-    paymentDate,
+    brand,
     paymentDate1,
-    payment: new mongoose.Types.ObjectId(payment),
+    paymentDate,
     royalityrate,
-  });
-  console.log('response', royalityupdate);
-  return royalityupdate;
+    shipment_date,
+    salesTaxInvoiceNo,
+    amount,
+    product,
+    contract,
+    saletaxinvoicedate,
+  } = input;
+
+  console.log(input, 'request from frontend');
+
+  
+
+  if (customer == '648d7c960cee8c1de3294415') {
+
+    const royality = await RoyalityModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          saletaxinvoicedate: saletaxinvoicedate,
+          amount: amount,
+          royalityrate: royalityrate,
+          paymentDate: paymentDate,
+          shipment_date: shipment_date,
+          paymentDate1: true,
+          InHouse: true,
+          paid: paid,
+          salesContract: new mongoose.Types.ObjectId(salesContract),
+          payment: new mongoose.Types.ObjectId(payment),
+          invoice: new mongoose.Types.ObjectId(invoice),
+          customer: new mongoose.Types.ObjectId(customer),
+          product: new mongoose.Types.ObjectId(product),
+          brand: new mongoose.Types.ObjectId(brand),
+          salesTaxInvoiceNo: salesTaxInvoiceNo,
+          contract: contract,
+        },
+      },
+      { new: true } // Return the updated document
+    );
+
+    return royality;
+  } else {
+const find_customer = await CustomerModel.findOne({ _id: customer });
+
+if (!find_customer) {
+  throw new Error('Customer not found');
+}
+
+    const royalityupdate = await RoyalityModel.findByIdAndUpdate(id, {
+      $set: {
+        saletaxinvoicedate: saletaxinvoicedate,
+        amount: amount,
+        paymentDate: paymentDate,
+        royalityrate: royalityrate,
+        shipment_date: shipment_date,
+        paymentDate1: true,
+        InHouse: false,
+        paid: paid,
+        salesContract: new mongoose.Types.ObjectId(salesContract),
+        payment: new mongoose.Types.ObjectId(payment),
+        invoice: new mongoose.Types.ObjectId(invoice),
+        customer: new mongoose.Types.ObjectId(customer),
+        product: new mongoose.Types.ObjectId(product),
+        brand: new mongoose.Types.ObjectId(brand),
+        salesTaxInvoiceNo: salesTaxInvoiceNo,
+        contract: contract,
+      },
+    });
+
+    return royalityupdate;
+  }
 };
 
 export const deleteRoyality = async () => {
@@ -171,64 +477,104 @@ export const deleteRoyality = async () => {
 };
 
 export const deleteRoyalityById = async (id: string) => {
-  //await PaymentModel.deleteMany({payement:id})
-  const royality = await RoyalityModel.findById(id);
+  const royalityfind = await RoyalityModel.findOne({ _id: id });
 
-  const sales = await PaymentModel.findByIdAndUpdate(royality?.payment, {
-    royality: false,
-  });
-  const delete1 = await RoyalityModel.findByIdAndUpdate(id, {
-    isDeleted: true,
-  });
-  return royality;
+  const customer = royalityfind?.customer;
+  const constract = royalityfind?.salesContract;
+
+  if (customer && customer.toString() === '648d7c960cee8c1de3294415') {
+    const delete1 = await RoyalityModel.findByIdAndUpdate(id, {
+      isDeleted: true,
+    });
+    const salecontract = await SalesContractModel.findByIdAndUpdate(constract, {
+      royality: false,
+    });
+    const salecontractdtl = await SalesContractDtlModel.updateOne(
+      { salesContract: new mongoose.Types.ObjectId(constract) },
+      {
+        royality: false,
+      }
+    );
+    return salecontractdtl;
+  } else {
+    const royality = await RoyalityModel.findById(id);
+
+    const sales = await PaymentModel.findByIdAndUpdate(royality?.payment, {
+      royality: false,
+    });
+    const delete1 = await RoyalityModel.findByIdAndUpdate(id, {
+      isDeleted: true,
+    });
+    return delete1;
+  }
 };
 
 export const findRoyality = async (input: RoyalityPaginationSchema) => {
   const limit = input.perPage;
   const skipCount = (input.pageno - 1) * limit;
-  const royalityrecords = await RoyalityModel.countDocuments();
-  const royality = await RoyalityModel.find({
-    Payment: Payment,
-    isDeleted: false,
-  })
-    .populate({
-      path: 'payment',
-      model: PaymentModel,
-      populate: [{ path: 'invoice', model: InvoiceModel }],
-    })
-    .limit(limit)
-    .skip(skipCount)
-    .sort({ id: 1 });
+  const searchQuery = new RegExp(`^${input?.contract}`, 'i');
 
-  // const invoiceDetails = await InvoiceDtlModel.find({ isDeleted: false })
-  //   .populate({
-  //     path: 'product',
-  //     model: ProductModel,
-  //   })
-  //   .populate({
-  //     path: 'currency',
-  //     model: CurrencyModel,
-  //   })
-  //   .populate({
-  //     path: 'invoice',
-  //     model: InvoiceModel,
-  //     populate: [
-  //       {
-  //         path: 'salesContract',
-  //         model: SalesContractModel,
-  //         populate: [
-  //           { path: 'brand', model: BrandModel },
-  //           { path: 'customer', model: CustomerModel },
-  //           { path: 'paymentTerm', model: PaymentTermModel },
-  //         ],
-  //       },
-  //     ],
-  //   });
+  const getRoyalityAggregation = (matchQuery: { contract: { $regex: RegExp; }; isDeleted: boolean; } | { isDeleted: boolean; contract?: undefined; }) => {
+    return RoyalityModel.aggregate([
+      {
+        $match: matchQuery,
+      },
+      {
+        $lookup: {
+          from: 'salescontracts',
+          localField: 'salesContract',
+          foreignField: '_id',
+          as: 'salesContract',
+        },
+      },
+      {
+        $lookup: {
+          from: 'payments',
+          localField: 'payment',
+          foreignField: '_id',
+          as: 'payment',
+        },
+      },
+      {
+        $lookup: {
+          from: 'invoices',
+          localField: 'invoice',
+          foreignField: '_id',
+          as: 'invoice',
+          pipeline: [
+            {
+              $lookup: {
+                from: 'salescontracts',
+                localField: 'salesContract',
+                foreignField: '_id',
+                as: 'salesContract',
+              },
+            },
+          ],
+        },
+      },
+      { $skip: skipCount },
+      { $limit: limit },
+      { $sort: { id: 1 } },
+    ]);
+  };
+
+
+  const matchQuery = input.contract
+    ? { contract: { $regex: searchQuery }, isDeleted: false }
+    : { isDeleted: false };
+
+
+  const [royality, totalRecords] = await Promise.all([
+    getRoyalityAggregation(matchQuery),
+    RoyalityModel.countDocuments(matchQuery),
+  ]);
 
   const result = {
     royality_dtl: royality,
-    total_Records: royalityrecords,
+    total_records: totalRecords,
   };
+
   return result;
 };
 export const getNewRoyalityId = async () => {
@@ -308,71 +654,6 @@ export const RoyalityDtlsByDate = async (input: ReportSchema) => {
         as: 'product',
       },
     },
-
-    // {
-    //   $lookup: {
-    //     from: 'payments',
-    //     localField: 'payment',
-    //     foreignField: '_id',
-    //     as: 'payments',
-    //     pipeline: [
-    //       {
-    //         $lookup: {
-    //           from: 'invoices',
-    //           localField: 'invoice',
-    //           foreignField: '_id',
-    //           as: 'invoices',
-    //           pipeline: [
-    //             {
-    //               $lookup: {
-    //                 from: 'invoicedtls',
-    //                 localField: '_id',
-    //                 foreignField: 'invoice',
-    //                 as: 'invoicedtls',
-    //                 pipeline: [
-    //                   {
-    //                     $lookup: {
-    //                       from: 'products',
-    //                       localField: 'product',
-    //                       foreignField: '_id',
-    //                       as: 'product',
-    //                     },
-    //                   },
-    //                 ],
-    //               },
-    //             },
-    //             {
-    //               $lookup: {
-    //                 from: 'salescontracts',
-    //                 localField: 'salesContract',
-    //                 foreignField: '_id',
-    //                 as: 'salescontracts',
-    //                 pipeline: [
-    //                   {
-    //                     $lookup: {
-    //                       from: 'customers',
-    //                       localField: 'customer',
-    //                       foreignField: '_id',
-    //                       as: 'customer',
-    //                     },
-    //                   },
-    //                   {
-    //                     $lookup: {
-    //                       from: 'brands',
-    //                       localField: 'brand',
-    //                       foreignField: '_id',
-    //                       as: 'Brand',
-    //                     },
-    //                   },
-    //                 ],
-    //               },
-    //             },
-    //           ],
-    //         },
-    //       },
-    //     ],
-    //   },
-    // },
   ]);
   return royality;
 };
@@ -447,93 +728,9 @@ export const royalityrateipdate = async (input: updateRoyalityrateSchema) => {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// export const findAllDetailToReport = async (input: ReportSchema) => {
-//   let where: any = {
-//     saletaxinvoicedate: {
-//       $gte: dayjs(input.fromDate).startOf('date'),
-//       $lte: dayjs(input.toDate).endOf('date'),
-//     },
-//   };
-//   if (input?.customer != '') {
-//     where.customer = input.customer;
-//   }
-
-//   const saleContract = await SalesContractModel.find()
-
-//     .populate({
-//       path: 'customer',
-//       model: CustomerModel,
-//     })
-//     .populate({
-//       path: 'brand',
-//       model: BrandModel,
-//     });
-
-//   const saleContractDetail = await SalesContractDtlModel.find({
-//     salesContract: saleContract,
-//   })
-//     .populate({
-//       path: 'product',
-//       model: ProductModel,
-//     })
-//     .populate({
-//       path: 'currency',
-//       model: CurrencyModel,
-//     })
-//     .populate({
-//       path: 'salesContract',
-//       model: SalesContractModel,
-//       populate: [
-//         { path: 'customer', model: CustomerModel },
-//         { path: 'brand', model: BrandModel },
-//       ],
-//     });
-
-//   const shipment = await ShipmentModel.find({
-//     salesContract: saleContract,
-//   });
-
-//   const invoice = await InvoiceModel.find({
-//     salesContract: { $in: saleContract },
-//   });
-//   const payment = await PaymentModel.find({ invoice: { $in: invoice } });
-//   const royality = await RoyalityModel.find({
-//     payment: { $in: payment },
-//   }).populate({
-//     path: 'payment',
-//     model: PaymentModel,
-//     populate: [
-//       {
-//         path: 'invoice',
-//         model: InvoiceModel,
-//         populate: [{ path: 'salesContract', model: SalesContractModel }],
-//       },
-//     ],
-//   });
-
-//   const royalties = royality.map((r) => {
-//     const scd = saleContractDetail.find(
-//       (s) =>
-//         s.salesContract._id.toString() ==
-//         r['payment']['invoice']['salesContract']['_id'].toString()
-//     );
-
-//     const ship = shipment.find(
-//       (s) =>
-//         s.salesContract._id.toString() ==
-//         r['payment']['invoice']['salesContract']['_id'].toString()
-//     );
-
-//     let data = _.merge(r, scd, ship);
-
-//     return data;
-//   });
-
-//   return royalties;
-// };
-
 export const findroyalityamount = async (input: RoyalityamountSchema) => {
-  const { payment } = input;
+  const { payment, royaltyRate } = input;
+
   const paymentModel = await PaymentModel.findById(payment);
 
   const invoiceDtls = await InvoiceDtlModel.aggregate([
@@ -547,1944 +744,3025 @@ export const findroyalityamount = async (input: RoyalityamountSchema) => {
       },
     },
   ]);
-  console.log(invoiceDtls, 'invoiceDtls');
-  const amount = (invoiceDtls[0].amount / 100) * 15;
-  console.log(amount, 'amount');
+
+  const amount = (invoiceDtls[0].amount / 100) * royaltyRate;
+
   return amount;
 };
 export const findAdmroyalityamount = async (input: RoyalityamountSchema) => {
-  const { salescontract } = input;
-  const salecontracts = await SalesContractDtlModel.findOne({
-    salesContract: salescontract,
-  });
-  console.log(salecontracts);
-  const amount = salecontracts?.amount;
-  const cal = (amount * 15) / 100;
+  const { salescontract, royaltyRate, contractDate } = input;
+
+  const inputDate = new Date(contractDate ?? new Date());
+
+  const thresholdDate = new Date('2024-06-10');
+  let cal: number = 0;
+
+  if (inputDate < thresholdDate) {
+    const salecontracts = await SalesContractDtlModel.findOne({
+      salesContract: salescontract,
+    });
+
+    const amount = salecontracts?.amount || 0;
+    cal = (amount * 15) / 100;
+  } else {
+    const salecontracts = await SalesContractDtlModel.findOne({
+      salesContract: salescontract,
+    });
+
+    const amount = salecontracts?.amount || 0;
+    cal = (amount * royaltyRate) / 100;
+  }
 
   return cal;
 };
 
-export const RoyalityReportDtlwithAdmDenim = async (
-  input: RoyalityReportSchema
-) => {
-  if (input.Admdenim == '' && input.otherthanadmdenim == '') {
-    const limit = input.perPage;
-    const skipCount = (input.pageno - 1) * limit;
 
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
 
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
+export const RoyalityReportDtlwithAdmDenim = async (input: RoyalityReportSchema) => {
+  try {
 
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
+    const {
+      otherthanadmdenim,
+      Admdenim,
+      product,
+      brand,
+      salesContract,
+      customer,
+      pageno = 1,
+      perPage = 10,
+      fromDate,
+      toDate,
+      isDeleted,
+      royality_return,
+      order_status,
+      royality_approval,
+      productgroup,
+      customergroup,
+      brandgroup,
+    } = input
 
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
+
+
+    if (royality_return !== '') {
+
+      console.log("royality return")
+
+      const limit = perPage;
+      const skipCount = (pageno - 1) * limit;
+
+      //  Group condition setter
+      const groupId: any = {};
+      const shouldGroup = productgroup || brandgroup || customergroup;
+
+      if (productgroup) groupId.product = '$product';
+      if (brandgroup) groupId.brand = '$brand';
+      if (customergroup) groupId.customer = '$customer';
+
+
+      // royality match stage
+      const matchStage: any = { isDeleted: false };
+
+
+      if (fromDate && toDate) {
+        matchStage.saletaxinvoicedate = {
+          $gte: new Date(fromDate),
+          $lte: new Date(toDate),
+        };
+      }
+
+      if (product?.length > 0) {
+        matchStage.product = {
+    $in: product.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (brand?.length > 0) {
+        matchStage.brand ={
+    $in: brand.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (customer?.length > 0) {
+        matchStage.customer ={
+    $in: customer.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+
+      if (Admdenim) matchStage['InHouse'] = true;
+      if (otherthanadmdenim) matchStage['InHouse'] = false;
+      if (royality_return) matchStage['return'] = false;
+
+
+      const scMatchStage: any = { };
+      if (royality_approval == 'true')
+        scMatchStage['salesContracts.royality_approval'] = true;
+      if (royality_approval == 'false')
+        scMatchStage['salesContracts.royality_approval'] = false;
+
+      // const scMatchStage2: any = { isDeleted: false };
+      if (order_status == 'confirmed')
+        scMatchStage['salesContracts.order_status'] = 'confirmed';
+      if (order_status == 'forecast')
+        scMatchStage['salesContracts.order_status'] = 'forecast';
+     if (isDeleted && isDeleted.toString().toLowerCase() === "true") {
+
+  matchStage.isDeleted = true;
+}
+
+      const basePipeline: any[] = [
         {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
+          $match: matchStage
         },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
+        {
+
+          $lookup: {
+            from: 'returns',
+            localField: 'salesContract',
+            foreignField: 'salesContract',
+            as: 'returns',
+
+          }
+        },
+        {
+          $unwind: {
+            path: "$returns",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+
+
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount",
+            returnQty: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualQty', null],
+                },
+                then: '$returns.actualQty',
+                else: 0,
+              },
+            },
+            balance: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.balance', null],
+                },
+                then: '$returns.balance',
+                else: 0,
+              },
+            },
+            returnAmount: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualAmount', null],
+                },
+                then: '$returns.actualAmount',
+                else: 0,
+              },
+            },
+            netQty: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.qty', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualQty', 0],
+                },
+              ],
+            },
+            netAmount: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.amount', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualAmount', 0],
+                },
+              ],
+            },
+
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const basePipelineSummary: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+
+          $lookup: {
+            from: 'returns',
+            localField: 'salesContract',
+            foreignField: 'salesContract',
+            as: 'returns',
+
+          }
+        },
+        {
+          $unwind: {
+            path: "$returns",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+
+
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount",
+            returnQty: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualQty', null],
+                },
+                then: '$returns.actualQty',
+                else: 0,
+              },
+            },
+            balance: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.balance', null],
+                },
+                then: '$returns.balance',
+                else: 0,
+              },
+            },
+            returnAmount: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualAmount', null],
+                },
+                then: '$returns.actualAmount',
+                else: 0,
+              },
+            },
+            netQty: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.qty', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualQty', 0],
+                },
+              ],
+            },
+            netAmount: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.amount', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualAmount', 0],
+                },
+              ],
+            },
+
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+
+      const groupStage = {
+        $group: {
+          _id: groupId,
+          product: {
+            $first: "$product"
+          },
+
+          brand: {
+            $first: "$brand"
+          },
+          customer: {
+            $first: "$customer"
+          },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          },
+          totalReturnQty: { $sum: '$returnQty' },
+          totalReturnAmount: { $sum: '$returnAmount' },
+          totalBalance: { $sum: '$balance' },
+          totalNetQty: { $sum: '$netQty' },
+          totalNetAmount: { $sum: '$netAmount' },
+
+        },
+
+
+      }
+      const groupStageSummary = {
+        $group: {
+          _id: '',
+          // product: {
+          //   $first: "$product"
+          // },
+
+          // brand: {
+          //   $first: "$brand"
+          // },
+          // customer: {
+          //   $first: "$customer"
+          // },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          },
+          totalReturnQty: { $sum: '$returnQty' },
+          totalReturnAmount: { $sum: '$returnAmount' },
+          totalBalance: { $sum: '$balance' },
+          totalNetQty: { $sum: '$netQty' },
+          totalNetAmount: { $sum: '$netAmount' },
+        },
+
+
+      }
+
+      // If grouping is not required, we can skip the group stage
+      const dataPipeline = shouldGroup
+        ? [...basePipeline, groupStage, sortStage, { $skip: skipCount }, { $limit: limit }]
+        : [...basePipeline, { $skip: skipCount }, { $limit: limit }]
+
+      // Count pipeline for total records
+      const countPipeline = shouldGroup
+        ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+        : [...basePipeline, { $count: 'totalRecords' }];
+
+
+      // Summary pipeline for total records
+      const summaryPipeline = shouldGroup
+        ? [...basePipelineSummary, groupStageSummary]
+        : [
+          ...basePipelineSummary,
+          {
+            $group: {
+              _id: null,
+              totalInvoiceQtySum: {
+                $sum: "$invoiceQty"
+              },
+              totalInvoiceAmountSum: {
+                $sum: "$invoiceAmount"
+              },
+              totalRoyalityAmountSum: {
+                $sum: "$royalityAmount"
+              },
+              totalReturnQty: { $sum: '$returnQty' },
+              totalReturnAmount: { $sum: '$returnAmount' },
+              totalBalance: { $sum: '$balance' },
+              totalNetQty: { $sum: '$netQty' },
+              totalNetAmount: { $sum: '$netAmount' },
+            },
+          },
+        ];
+      // Executing the pipelines in parallel
+      const [royalitydtl, totalResult, summaryResult] = await Promise.all([
+        RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
+      ]);
+
+      // Extracting total records and summary from the results
+      const totalRecords = totalResult?.[0]?.totalRecords || 0;
+      const summary = summaryResult?.[0] || {
+        totalInvoiceQtySum: 0,
+        totalInvoiceAmountSum: 0,
+        totalReturnQty: 0,
+        totalReturnAmount: 0,
+        totalBalance: 0,
+        totalNetQty: 0,
+        totalNetAmount: 0,
+        totalRoyalityAmountSum: 0,
       };
-      filter = {
-        salesContract: { $in: salecontractArr },
+      return {
+        royalitydtl,
+        summary,
+        pagination: {
+          page: pageno,
+          perPage,
+          totalRecords,
+          totalPages: Math.ceil(totalRecords / perPage),
+        },
       };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
+
+
+    }
+    else {
+
+      const limit = perPage;
+      const skipCount = (pageno - 1) * limit;
+
+      //  Group condition setter
+      const groupId: any = {};
+      const shouldGroup = productgroup || brandgroup || customergroup;
+
+      if (productgroup) groupId.product = '$product';
+      if (brandgroup) groupId.brand = '$brand';
+      if (customergroup) groupId.customer = '$customer';
+
+
+      // royality match stage
+      const matchStage: any = { isDeleted: false };
+
+
+      if (fromDate && toDate) {
+        matchStage.saletaxinvoicedate = {
+          $gte: new Date(fromDate),
+          $lte: new Date(toDate),
+        };
+      }
+
+      if (product?.length > 0) {
+        matchStage.product = {
+    $in: product.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (brand?.length > 0) {
+        matchStage.brand = {
+            $in: brand.map(id => new mongoose.Types.ObjectId(id))
+          };
+      }
+
+      if (customer?.length > 0) {
+        matchStage.customer = {
+    $in: customer.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+
+      if (Admdenim) matchStage['InHouse'] = true;
+      if (otherthanadmdenim) matchStage['InHouse'] = false;
+
+
+
+      const scMatchStage: any = { };
+      if (royality_approval == 'true')
+        scMatchStage['salesContracts.royality_approval'] = true;
+      if (royality_approval == 'false')
+        scMatchStage['salesContracts.royality_approval'] = false;
+
+      // const scMatchStage2: any = { isDeleted: false };
+      if (order_status == 'confirmed')
+        scMatchStage['salesContracts.order_status'] = 'confirmed';
+      if (order_status == 'forecast')
+        scMatchStage['salesContracts.order_status'] = 'forecast';
+     if (isDeleted && isDeleted.toString().toLowerCase() === "true") {
+
+  matchStage.isDeleted = true;
+}
+
+      const basePipeline: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount"
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const basePipelineSummary: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount"
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+
+      const groupStage = {
+        $group: {
+          _id: groupId,
+          product: {
+            $first: "$product"
+          },
+
+          brand: {
+            $first: "$brand"
+          },
+          customer: {
+            $first: "$customer"
+          },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          }
+
+        },
+
+
+      }
+      const groupStageSummary = {
+        $group: {
+          _id: '',
+          // product: {
+          //   $first: "$product"
+          // },
+
+          // brand: {
+          //   $first: "$brand"
+          // },
+          // customer: {
+          //   $first: "$customer"
+          // },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          }
+        },
+
+
+      }
+
+      // If grouping is not required, we can skip the group stage
+      const dataPipeline = shouldGroup
+        ? [...basePipeline, groupStage, sortStage, { $skip: skipCount }, { $limit: limit }]
+        : [...basePipeline, { $skip: skipCount }, { $limit: limit }]
+
+      // Count pipeline for total records
+      const countPipeline = shouldGroup
+        ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+        : [...basePipeline, { $count: 'totalRecords' }];
+
+
+      // Summary pipeline for total records
+      const summaryPipeline = shouldGroup
+        ? [...basePipelineSummary, groupStageSummary]
+        : [
+          ...basePipelineSummary,
+          {
+            $group: {
+              _id: null,
+              totalInvoiceQtySum: {
+                $sum: "$invoiceQty"
+              },
+              totalInvoiceAmountSum: {
+                $sum: "$invoiceAmount"
+              },
+              totalRoyalityAmountSum: {
+                $sum: "$royalityAmount"
+              }
+            },
+          },
+        ];
+      // Executing the pipelines in parallel
+      const [royalitydtl, totalResult, summaryResult] = await Promise.all([
+        RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
+      ]);
+
+      // Extracting total records and summary from the results
+      const totalRecords = totalResult?.[0]?.totalRecords || 0;
+      const summary = summaryResult?.[0] || {
+        totalInvoiceQtySum: 0,
+        totalInvoiceAmountSum: 0,
+        totalRoyalityAmountSum: 0,
       };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
+      return {
+        royalitydtl,
+        summary,
+        pagination: {
+          page: pageno,
+          perPage,
+          totalRecords,
+          totalPages: Math.ceil(totalRecords / perPage),
+        },
       };
     }
-    const group_by = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
-          },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
-          },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
-          },
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
-
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
-        },
-      },
-      { $skip: skipCount },
-      { $limit: limit },
-      { $sort: { id: 1 } },
-    ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:royalitymaount
-    };
-    return result;
-  } 
-  else if (input.Admdenim !== '') {
-    console.log('adm denim');
-    const limit = input.perPage;
-    const skipCount = (input.pageno - 1) * limit;
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
-
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
-      };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
-      };
-    }
-    const group_by = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: filter,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
-          },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
-          },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
-          },
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
-
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
-        },
-      },
-      { $skip: skipCount },
-      { $limit: limit },
-      { $sort: { id: 1 } },
-    ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:royalitymaount
-    };
-    return result;
+  } catch (e) {
+    console.error('Error in findRoyalityDtlsByDate:', e);
+    throw e;
   }
-   else if (input.otherthanadmdenim !== '') {
-    console.log(' other than adm denim');
-    const limit = input.perPage;
-    const skipCount = (input.pageno - 1) * limit;
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
 
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
 
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
+}
 
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
+export const RoyalitydtlReportPrint = async (input: RoyalityReportPrintSchema) => {
+  try {
+
+    const {
+      otherthanadmdenim,
+      Admdenim,
+      product,
+      brand,
+      salesContract,
+      customer,
+      fromDate,
+      royality_return,
+      isDeleted,
+      toDate,
+      order_status,
+      royality_approval,
+      productgroup,
+      customergroup,
+      brandgroup,
+    } = input
+
+
+    // const limit = perPage;
+    // const skipCount = (pageno - 1) * limit;
+
+    //  Group condition setter
+
+    if (royality_return !== '') {
+
+      console.log("royality return")
+
+      const groupId: any = {};
+      const shouldGroup = productgroup || brandgroup || customergroup;
+
+      if (productgroup) groupId.product = '$product';
+      if (brandgroup) groupId.brand = '$brand';
+      if (customergroup) groupId.customer = '$customer';
+
+
+      // royality match stage
+      const matchStage: any = { isDeleted: false };
+
+
+      if (fromDate && toDate) {
+        matchStage.saletaxinvoicedate = {
+          $gte: new Date(fromDate),
+          $lte: new Date(toDate),
+        };
+      }
+
+      if (product?.length > 0) {
+        matchStage.product ={
+    $in: product.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (brand?.length > 0) {
+        matchStage.brand = {
+    $in: brand.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (customer?.length > 0) {
+        matchStage.customer = {
+    $in: customer.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+
+      if (Admdenim) matchStage['InHouse'] = true;
+      if (otherthanadmdenim) matchStage['InHouse'] = false;
+      if (royality_return) matchStage['return'] = false;
+
+
+      const scMatchStage: any = {};
+      if (royality_approval == 'true')
+        scMatchStage['salesContracts.royality_approval'] = true;
+      if (royality_approval == 'false')
+        scMatchStage['salesContracts.royality_approval'] = false;
+
+      // const scMatchStage2: any = { isDeleted: false };
+      if (order_status == 'confirmed')
+        scMatchStage['salesContracts.order_status'] = 'confirmed';
+      if (order_status == 'forecast')
+        scMatchStage['salesContracts.order_status'] = 'forecast';
+
+     if (isDeleted && isDeleted.toString().toLowerCase() === "true") {
+
+  matchStage.isDeleted = true;
+}
+      const basePipeline: any[] = [
         {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
+          $match: matchStage
         },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
+        {
+
+          $lookup: {
+            from: 'returns',
+            localField: 'salesContract',
+            foreignField: 'salesContract',
+            as: 'returns',
+
+          }
+        },
+        {
+          $unwind: {
+            path: "$returns",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+
+
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount",
+            returnQty: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualQty', null],
+                },
+                then: '$returns.actualQty',
+                else: 0,
+              },
+            },
+            balance: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.balance', null],
+                },
+                then: '$returns.balance',
+                else: 0,
+              },
+            },
+            returnAmount: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualAmount', null],
+                },
+                then: '$returns.actualAmount',
+                else: 0,
+              },
+            },
+            netQty: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.qty', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualQty', 0],
+                },
+              ],
+            },
+            netAmount: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.amount', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualAmount', 0],
+                },
+              ],
+            },
+
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const basePipelineSummary: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+
+          $lookup: {
+            from: 'returns',
+            localField: 'salesContract',
+            foreignField: 'salesContract',
+            as: 'returns',
+
+          }
+        },
+        {
+          $unwind: {
+            path: "$returns",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+
+
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            royalityRate: '$royalityrate',
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount",
+            returnQty: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualQty', null],
+                },
+                then: '$returns.actualQty',
+                else: 0,
+              },
+            },
+            balance: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.balance', null],
+                },
+                then: '$returns.balance',
+                else: 0,
+              },
+            },
+            returnAmount: {
+              $cond: {
+                if: {
+                  $gt: ['$returns.actualAmount', null],
+                },
+                then: '$returns.actualAmount',
+                else: 0,
+              },
+            },
+            netQty: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.qty', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualQty', 0],
+                },
+              ],
+            },
+            netAmount: {
+              $subtract: [
+                {
+                  $ifNull: ['$invoicedtls.amount', 0],
+                },
+                {
+                  $ifNull: ['$returns.actualAmount', 0],
+                },
+              ],
+            },
+
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+            saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+      const groupStage = {
+        $group: {
+          _id: groupId,
+          product: {
+            $first: "$product"
+          },
+
+          brand: {
+            $first: "$brand"
+          },
+          customer: {
+            $first: "$customer"
+          },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          },
+          totalReturnQty: { $sum: '$returnQty' },
+          totalReturnAmount: { $sum: '$returnAmount' },
+          totalBalance: { $sum: '$balance' },
+          totalNetQty: { $sum: '$netQty' },
+          totalNetAmount: { $sum: '$netAmount' },
+
+        },
+
+
+      }
+      const groupStageSummary = {
+        $group: {
+          _id: '',
+          // product: {
+          //   $first: "$product"
+          // },
+
+          // brand: {
+          //   $first: "$brand"
+          // },
+          // customer: {
+          //   $first: "$customer"
+          // },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          },
+          totalReturnQty: { $sum: '$returnQty' },
+          totalReturnAmount: { $sum: '$returnAmount' },
+          totalBalance: { $sum: '$balance' },
+          totalNetQty: { $sum: '$netQty' },
+          totalNetAmount: { $sum: '$netAmount' },
+        },
+
+
+      }
+
+      // If grouping is not required, we can skip the group stage
+      const dataPipeline = shouldGroup
+        ? [...basePipeline, groupStage, sortStage]
+        : [...basePipeline, sortStage]
+
+      // Count pipeline for total records
+      // const countPipeline = shouldGroup 
+      // ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+      // : [...basePipeline, { $count: 'totalRecords' }];
+
+
+      // Summary pipeline for total records
+      const summaryPipeline = shouldGroup
+        ? [...basePipelineSummary, groupStageSummary]
+        : [
+          ...basePipelineSummary,
+          {
+            $group: {
+              _id: null,
+              totalInvoiceQtySum: {
+                $sum: "$invoiceQty"
+              },
+              totalInvoiceAmountSum: {
+                $sum: "$invoiceAmount"
+              },
+              totalRoyalityAmountSum: {
+                $sum: "$royalityAmount"
+              },
+              totalReturnQty: { $sum: '$returnQty' },
+              totalReturnAmount: { $sum: '$returnAmount' },
+              totalBalance: { $sum: '$balance' },
+              totalNetQty: { $sum: '$netQty' },
+              totalNetAmount: { $sum: '$netAmount' },
+            },
+          },
+        ];
+      // Executing the pipelines in parallel
+      const [royalitydtl, summaryResult] = await Promise.all([
+        RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+        // RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
+      ]);
+
+      // Extracting total records and summary from the results
+      // const totalRecords = totalResult?.[0]?.totalRecords || 0;
+      const summary = summaryResult?.[0] || {
+        totalInvoiceQtySum: 0,
+        totalInvoiceAmountSum: 0,
+        totalReturnQty: 0,
+        totalReturnAmount: 0,
+        totalBalance: 0,
+        totalNetQty: 0,
+        totalNetAmount: 0,
+        totalRoyalityAmountSum: 0,
       };
-      filter = {
-        salesContract: { $in: salecontractArr },
+      return {
+        royalitydtl,
+        summary,
+        // pagination: {
+        //   page: pageno,
+        //   perPage,
+        //   totalRecords,
+        //   totalPages: Math.ceil(totalRecords / perPage),
+        // },
       };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
+
+
+
+    }
+    else {
+      console.log("else")
+      const groupId: any = {};
+      const shouldGroup = productgroup || brandgroup || customergroup;
+
+      if (productgroup) groupId.product = '$product';
+      if (brandgroup) groupId.brand = '$brand';
+      if (customergroup) groupId.customer = '$customer';
+
+
+      // royality match stage
+      const matchStage: any = { isDeleted: false };
+
+
+      if (fromDate && toDate) {
+        matchStage.saletaxinvoicedate = {
+          $gte: new Date(fromDate),
+          $lte: new Date(toDate),
+        };
+      }
+
+      if (product?.length > 0) {
+        matchStage.product = {
+    $in: product.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (brand?.length > 0) {
+        matchStage.brand = {
+    $in: brand.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+      if (customer?.length > 0) {
+        matchStage.customer = {
+    $in: customer.map(id => new mongoose.Types.ObjectId(id))
+  };
+      }
+
+
+      if (Admdenim) matchStage['InHouse'] = true;
+      if (otherthanadmdenim) matchStage['InHouse'] = false;
+
+
+      const scMatchStage: any = {};
+      if (royality_approval == 'true')
+        scMatchStage['salesContracts.royality_approval'] = true;
+      if (royality_approval == 'false')
+        scMatchStage['salesContracts.royality_approval'] = false;
+
+      // const scMatchStage2: any = { isDeleted: false };
+      if (order_status == 'confirmed')
+        scMatchStage['salesContracts.order_status'] = 'confirmed';
+      if (order_status == 'forecast')
+        scMatchStage['salesContracts.order_status'] = 'forecast';
+      // Check if isDeleted is true and set the matchStage accordingly
+     if (isDeleted && isDeleted.toString().toLowerCase() === "true") {
+
+  matchStage.isDeleted = true;
+}
+
+      const basePipeline: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            product: "$products.name",
+            royalityRate: '$royalityrate',
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount"
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+             saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const basePipelineSummary: any[] = [
+        {
+          $match: matchStage
+        },
+        {
+          $lookup: {
+            from: "salescontracts",
+            localField: "salesContract",
+            foreignField: "_id",
+            as: "salesContracts"
+          }
+        },
+        {
+          $unwind: {
+            path: "$salesContracts",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $match: scMatchStage,
+        },
+        {
+          $lookup: {
+            from: "customers",
+            localField: "customer",
+            foreignField: "_id",
+            as: "customers"
+          }
+        },
+        {
+          $unwind: {
+            path: "$customers",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "product",
+            foreignField: "_id",
+            as: "products"
+          }
+        },
+        {
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "invoicedtls",
+            localField: "invoice",
+            foreignField: "invoice",
+            as: "invoicedtls"
+          }
+        },
+        {
+          $unwind: {
+            path: "$invoicedtls",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "brands",
+            localField: "brand",
+            foreignField: "_id",
+            as: "brands"
+          }
+        },
+        {
+          $unwind: {
+            path: "$brands",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            contract: "$salesContracts.contract",
+            salesTaxInvoiceNo: 1,
+            payemntDate: "$paymentDate",
+            paid: "$paid",
+            saleTaxInvoiceDate: "$saletaxinvoicedate",
+            customer: "$customers.name",
+            royalityRate: '$royalityrate',
+            product: "$products.name",
+            brand: "$brands.name",
+            invoiceRate: "$invoicedtls.rate",
+            invoiceQty: "$invoicedtls.qty",
+            invoiceAmount: "$invoicedtls.amount",
+            royalityAmount: "$amount"
+          }
+        },
+        {
+          $sort: {
+            // _id: -1,
+                saleTaxInvoiceDate: -1
+          }
+        }
+      ]
+      const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+      const groupStage = {
+        $group: {
+          _id: groupId,
+          product: {
+            $first: "$product"
+          },
+
+          brand: {
+            $first: "$brand"
+          },
+          customer: {
+            $first: "$customer"
+          },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          }
+
+        },
+
+
+      }
+      const groupStageSummary = {
+        $group: {
+          _id: '',
+          // product: {
+          //   $first: "$product"
+          // },
+
+          // brand: {
+          //   $first: "$brand"
+          // },
+          // customer: {
+          //   $first: "$customer"
+          // },
+          totalInvoiceQtySum: {
+            $sum: "$invoiceQty"
+          },
+          totalInvoiceAmountSum: {
+            $sum: "$invoiceAmount"
+          },
+          totalRoyalityAmountSum: {
+            $sum: "$royalityAmount"
+          }
+
+        },
+
+
+      }
+
+      // If grouping is not required, we can skip the group stage
+      const dataPipeline = shouldGroup
+        ? [...basePipeline, groupStage, sortStage]
+        : [...basePipeline, sortStage]
+
+      // Count pipeline for total records
+      // const countPipeline = shouldGroup 
+      // ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+      // : [...basePipeline, { $count: 'totalRecords' }];
+
+
+      // Summary pipeline for total records
+      const summaryPipeline = shouldGroup
+        ? [...basePipelineSummary, groupStageSummary]
+        : [
+          ...basePipelineSummary,
+          {
+            $group: {
+              _id: null,
+              totalInvoiceQtySum: {
+                $sum: "$invoiceQty"
+              },
+              totalInvoiceAmountSum: {
+                $sum: "$invoiceAmount"
+              },
+              totalRoyalityAmountSum: {
+                $sum: "$royalityAmount"
+              }
+            },
+          },
+        ];
+      // Executing the pipelines in parallel
+      const [royalitydtl, summaryResult] = await Promise.all([
+        RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+        // RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+        RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
+      ]);
+
+      // Extracting total records and summary from the results
+      // const totalRecords = totalResult?.[0]?.totalRecords || 0;
+      const summary = summaryResult?.[0] || {
+        totalInvoiceQtySum: 0,
+        totalInvoiceAmountSum: 0,
+        totalRoyalityAmountSum: 0,
       };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
+      return {
+        royalitydtl,
+        summary,
+        // pagination: {
+        //   page: pageno,
+        //   perPage,
+        //   totalRecords,
+        //   totalPages: Math.ceil(totalRecords / perPage),
+        // },
       };
     }
-    const group_by = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
-      },
-      {
-        $match: filter,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
-          },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
-          },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
-          },
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse:false
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    
-
-
-
-
-
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
-        },
-      },
-      { $skip: skipCount },
-      { $limit: limit },
-      { $sort: { id: 1 } },
-    ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:RoyalityAmount
-    };
-    return result;
+  } catch (e) {
+    console.error('Error in findRoyalityDtlsByDate:', e);
+    throw e;
   }
-};
+
+}
 
 
 
-export const  RoyalitydtlReportPrint = async(input:RoyalityReportPrintSchema)=>{
 
-  if (input.Admdenim == '' && input.otherthanadmdenim == '') {
-   
+export const RoyalityReportDtlNetwithAdmDenim = async (input: RoyalityReportSchema) => {
+  try {
 
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
+    const {
+      otherthanadmdenim,
+      Admdenim,
+      product,
+      brand,
+      salesContract,
+      customer,
+      pageno = 1,
+      perPage = 10,
+      fromDate,
+      toDate,
+      order_status,
+      royality_approval,
+      productgroup,
+      customergroup,
+      brandgroup,
+    } = input
 
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
+    const limit = perPage;
+    const skipCount = (pageno - 1) * limit;
 
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
+    //  Group condition setter
+    const groupId: any = {};
+    const shouldGroup = productgroup || brandgroup || customergroup;
 
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
+    if (productgroup) groupId.product = '$product';
+    if (brandgroup) groupId.brand = '$brand';
+    if (customergroup) groupId.customer = '$customer';
 
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
-      };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
+
+    // royality match stage
+    const matchStage: any = { isDeleted: false };
+
+
+    if (fromDate && toDate) {
+      matchStage.saletaxinvoicedate = {
+        $gte: new Date(fromDate),
+        $lte: new Date(toDate),
       };
     }
-    const group_by = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
-          },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
-          },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
-          },
-        },
-      },
-      {
-        $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
 
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
-
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
-      },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
-        },
-      },
-    
-    ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:royalitymaount
-    };
-    return result;
-  } 
-  else if (input.Admdenim !== '') {
-    console.log('adm denim');
-
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
-
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
-      };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
-      };
+    if (product?.length > 0) {
+      matchStage.product = new mongoose.Types.ObjectId(product[0]);
     }
-    const group_by = await RoyalityModel.aggregate([
+
+    if (brand?.length > 0) {
+      matchStage.brand = new mongoose.Types.ObjectId(brand[0]);
+    }
+
+    if (customer?.length > 0) {
+      matchStage.customer = new mongoose.Types.ObjectId(customer[0]);
+    }
+
+
+    if (Admdenim) matchStage['InHouse'] = true;
+    if (otherthanadmdenim) matchStage['InHouse'] = false;
+
+
+    const scMatchStage: any = { isDeleted: false };
+    if (royality_approval == 'true')
+      scMatchStage['salesContracts.royality_approval'] = true;
+    if (royality_approval == 'false')
+      scMatchStage['salesContracts.royality_approval'] = false;
+
+    // const scMatchStage2: any = { isDeleted: false };
+    if (order_status == 'confirmed')
+      scMatchStage['salesContracts.order_status'] = 'confirmed';
+    if (order_status == 'forecast')
+      scMatchStage['salesContracts.order_status'] = 'forecast';
+
+
+    const basePipeline: any[] = [
       {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
+        $match: matchStage
       },
       {
-        $match: filter,
+
+        $lookup: {
+          from: 'returns',
+          localField: 'salesContract',
+          foreignField: 'salesContract',
+          as: 'returns',
+
+        }
+      },
+      {
+        $unwind: {
+          path: "$returns",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+
+      {
+        $lookup: {
+          from: "salescontracts",
+          localField: "salesContract",
+          foreignField: "_id",
+          as: "salesContracts"
+        }
+      },
+      {
+        $unwind: {
+          path: "$salesContracts",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $match: scMatchStage,
       },
       {
         $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customers"
+        }
+      },
+      {
+        $unwind: {
+          path: "$customers",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "product",
+          foreignField: "_id",
+          as: "products"
+        }
+      },
+      {
+        $unwind: {
+          path: "$products",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "invoicedtls",
+          localField: "invoice",
+          foreignField: "invoice",
+          as: "invoicedtls"
+        }
+      },
+      {
+        $unwind: {
+          path: "$invoicedtls",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "brands",
+          localField: "brand",
+          foreignField: "_id",
+          as: "brands"
+        }
+      },
+      {
+        $unwind: {
+          path: "$brands",
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
+
+
+          contract: "$salesContracts.contract",
+          salesTaxInvoiceNo: 1,
+          royalityRate: '$royalityrate',
+          saleTaxInvoiceDate: "$saletaxinvoicedate",
+          customer: "$customers.name",
+          product: "$products.name",
+          payemntDate: "$paymentDate",
+          paid: "$paid",
+          brand: "$brands.name",
+          invoiceRate: "$invoicedtls.rate",
+          invoiceQty: "$invoicedtls.qty",
+          invoiceAmount: "$invoicedtls.amount",
+          royalityAmount: "$amount",
+          returnQty: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualQty', null],
+              },
+              then: '$returns.actualQty',
+              else: 0,
+            },
           },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
+          balance: {
+            $cond: {
+              if: {
+                $gt: ['$returns.balance', null],
+              },
+              then: '$returns.balance',
+              else: 0,
+            },
           },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
+          returnAmount: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualAmount', null],
+              },
+              then: '$returns.actualAmount',
+              else: 0,
+            },
           },
-        },
+          netQty: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.qty', 0],
+              },
+              {
+                $ifNull: ['$returns.actualQty', 0],
+              },
+            ],
+          },
+          netAmount: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.amount', 0],
+              },
+              {
+                $ifNull: ['$returns.actualAmount', 0],
+              },
+            ],
+          },
+
+        }
+      },
+      {
+        $sort: {
+          _id: -1,
+          saletaxinvoicedate: -1
+        }
+      }
+    ]
+    const basePipelineSummary: any[] = [
+      {
+        $match: matchStage
+      },
+      {
+
+        $lookup: {
+          from: 'returns',
+          localField: 'salesContract',
+          foreignField: 'salesContract',
+          as: 'returns',
+
+        }
+      },
+      {
+        $unwind: {
+          path: "$returns",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+
+      {
+        $lookup: {
+          from: "salescontracts",
+          localField: "salesContract",
+          foreignField: "_id",
+          as: "salesContracts"
+        }
+      },
+      {
+        $unwind: {
+          path: "$salesContracts",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $match: scMatchStage,
+      },
+      {
+        $lookup: {
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customers"
+        }
+      },
+      {
+        $unwind: {
+          path: "$customers",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "product",
+          foreignField: "_id",
+          as: "products"
+        }
+      },
+      {
+        $unwind: {
+          path: "$products",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "invoicedtls",
+          localField: "invoice",
+          foreignField: "invoice",
+          as: "invoicedtls"
+        }
+      },
+      {
+        $unwind: {
+          path: "$invoicedtls",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "brands",
+          localField: "brand",
+          foreignField: "_id",
+          as: "brands"
+        }
+      },
+      {
+        $unwind: {
+          path: "$brands",
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
 
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
 
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: true,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
+          contract: "$salesContracts.contract",
+          salesTaxInvoiceNo: 1,
+          royalityRate: '$royalityrate',
+          saleTaxInvoiceDate: "$saletaxinvoicedate",
+          customer: "$customers.name",
+          product: "$products.name",
+          payemntDate: "$paymentDate",
+          paid: "$paid",
+          brand: "$brands.name",
+          invoiceRate: "$invoicedtls.rate",
+          invoiceQty: "$invoicedtls.qty",
+          invoiceAmount: "$invoicedtls.amount",
+          royalityAmount: "$amount",
+          returnQty: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualQty', null],
               },
+              then: '$returns.actualQty',
+              else: 0,
             },
-          ],
-        },
+          },
+          balance: {
+            $cond: {
+              if: {
+                $gt: ['$returns.balance', null],
+              },
+              then: '$returns.balance',
+              else: 0,
+            },
+          },
+          returnAmount: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualAmount', null],
+              },
+              then: '$returns.actualAmount',
+              else: 0,
+            },
+          },
+          netQty: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.qty', 0],
+              },
+              {
+                $ifNull: ['$returns.actualQty', 0],
+              },
+            ],
+          },
+          netAmount: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.amount', 0],
+              },
+              {
+                $ifNull: ['$returns.actualAmount', 0],
+              },
+            ],
+          },
+
+        }
       },
       {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
+        $sort: {
+          _id: -1,
+          saletaxinvoicedate: -1
+        }
+      }
+    ]
+    const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+
+    const groupStage = {
+      $group: {
+        _id: groupId,
+        product: {
+          $first: "$product"
         },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
+
+        brand: {
+          $first: "$brand"
         },
+        customer: {
+          $first: "$customer"
+        },
+        totalInvoiceQtySum: {
+          $sum: "$invoiceQty"
+        },
+        totalInvoiceAmountSum: {
+          $sum: "$invoiceAmount"
+        },
+        totalRoyalityAmountSum: {
+          $sum: "$royalityAmount"
+        },
+        totalReturnQty: { $sum: '$returnQty' },
+        totalReturnAmount: { $sum: '$returnAmount' },
+        totalBalance: { $sum: '$balance' },
+        totalNetQty: { $sum: '$netQty' },
+        totalNetAmount: { $sum: '$netAmount' },
+
       },
- 
+
+
+    }
+    const groupStageSummary = {
+      $group: {
+        _id: '',
+        // product: {
+        //   $first: "$product"
+        // },
+
+        // brand: {
+        //   $first: "$brand"
+        // },
+        // customer: {
+        //   $first: "$customer"
+        // },
+        totalInvoiceQtySum: {
+          $sum: "$invoiceQty"
+        },
+        totalInvoiceAmountSum: {
+          $sum: "$invoiceAmount"
+        },
+        totalRoyalityAmountSum: {
+          $sum: "$royalityAmount"
+        },
+        totalReturnQty: { $sum: '$returnQty' },
+        totalReturnAmount: { $sum: '$returnAmount' },
+        totalBalance: { $sum: '$balance' },
+        totalNetQty: { $sum: '$netQty' },
+        totalNetAmount: { $sum: '$netAmount' },
+      },
+
+
+    }
+
+    // If grouping is not required, we can skip the group stage
+    const dataPipeline = shouldGroup
+      ? [...basePipeline, groupStage, sortStage, { $skip: skipCount }, { $limit: limit }]
+      : [...basePipeline, { $skip: skipCount }, { $limit: limit }]
+
+    // Count pipeline for total records
+    const countPipeline = shouldGroup
+      ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+      : [...basePipeline, { $count: 'totalRecords' }];
+
+
+    // Summary pipeline for total records
+    const summaryPipeline = shouldGroup
+      ? [...basePipelineSummary, groupStageSummary]
+      : [
+        ...basePipelineSummary,
+        {
+          $group: {
+            _id: null,
+            totalInvoiceQtySum: {
+              $sum: "$invoiceQty"
+            },
+            totalInvoiceAmountSum: {
+              $sum: "$invoiceAmount"
+            },
+            totalRoyalityAmountSum: {
+              $sum: "$royalityAmount"
+            },
+            totalReturnQty: { $sum: '$returnQty' },
+            totalReturnAmount: { $sum: '$returnAmount' },
+            totalBalance: { $sum: '$balance' },
+            totalNetQty: { $sum: '$netQty' },
+            totalNetAmount: { $sum: '$netAmount' },
+          },
+        },
+      ];
+    // Executing the pipelines in parallel
+    const [royalitydtl, totalResult, summaryResult] = await Promise.all([
+      RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+      RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+      RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
     ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:royalitymaount
+
+    // Extracting total records and summary from the results
+    const totalRecords = totalResult?.[0]?.totalRecords || 0;
+    const summary = summaryResult?.[0] || {
+      totalInvoiceQtySum: 0,
+      totalInvoiceAmountSum: 0,
+      totalReturnQty: 0,
+      totalReturnAmount: 0,
+      totalBalance: 0,
+      totalNetQty: 0,
+      totalNetAmount: 0,
+      totalRoyalityAmountSum: 0,
     };
-    return result;
+    return {
+      royalitydtl,
+      summary,
+      pagination: {
+        page: pageno,
+        perPage,
+        totalRecords,
+        totalPages: Math.ceil(totalRecords / perPage),
+      },
+    };
+  } catch (e) {
+    console.error('Error in findRoyalityDtlsByDate:', e);
+    throw e;
   }
-   else if (input.otherthanadmdenim !== '') {
-    console.log(' other than adm denim');
-   
-    let where: any = {};
-    let filter = {};
-    let filter_records: any = {};
 
-    const salecontractArr = input.salesContract
-      ? input.salesContract.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const productArr = input.product
-      ? input.product.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    const customerArr = input.customer
-      ? input.customer.map((id: any) => new mongoose.Types.ObjectId(id))
-      : [];
-    if (
-      salecontractArr.length > 0 &&
-      productArr.length > 0 &&
-      customerArr.length > 0
-    ) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && customerArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
-          salesContract: { $in: salecontractArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        salesContract: { $in: salecontractArr },
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          salesContract: { $in: salecontractArr },
-          product: { $in: productArr },
-        },
-      ];
-    } else if (customerArr.length > 0 && productArr.length > 0) {
-      where.$and = [
-        {
-          customer: { $in: customerArr },
+}
 
-          product: { $in: productArr },
-        },
-      ];
-      filter = {
-        customer: { $in: customerArr },
+export const RoyalitydtlNetReportPrint = async (input: RoyalityReportSchema) => {
+  try {
 
-        product: { $in: productArr },
-      };
-      filter_records.$and = [
-        {
-          customer: { $in: customerArr },
+    const {
+      otherthanadmdenim,
+      Admdenim,
+      product,
+      brand,
+      salesContract,
+      customer,
+      pageno = 1,
+      perPage = 10,
+      fromDate,
+      toDate,
+      order_status,
+      royality_approval,
+      productgroup,
+      customergroup,
+      brandgroup,
+    } = input
 
-          product: { $in: productArr },
-        },
-      ];
-    } else if (salecontractArr.length > 0) {
-      where = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter = {
-        salesContract: { $in: salecontractArr },
-      };
-      filter_records = {
-        salesContract: { $in: salecontractArr },
-      };
-    } else if (productArr.length > 0) {
-      where = {
-        product: { $in: productArr },
-      };
-      filter = {
-        product: { $in: productArr },
-      };
-      filter_records = {
-        product: { $in: productArr },
-      };
-    } else if (customerArr.length > 0) {
-      where = {
-        customer: { $in: customerArr },
-      };
-      filter = {
-        customer: { $in: customerArr },
-      };
-      filter_records = {
-        customer: { $in: customerArr },
+    // const limit = perPage;
+    // const skipCount = (pageno - 1) * limit;
+
+    //  Group condition setter
+    const groupId: any = {};
+    const shouldGroup = productgroup || brandgroup || customergroup;
+
+    if (productgroup) groupId.product = '$product';
+    if (brandgroup) groupId.brand = '$brand';
+    if (customergroup) groupId.customer = '$customer';
+
+
+    // royality match stage
+    const matchStage: any = { isDeleted: false };
+
+
+    if (fromDate && toDate) {
+      matchStage.saletaxinvoicedate = {
+        $gte: new Date(fromDate),
+        $lte: new Date(toDate),
       };
     }
-    const group_by = await RoyalityModel.aggregate([
+
+    if (product?.length > 0) {
+      matchStage.product = new mongoose.Types.ObjectId(product[0]);
+    }
+
+    if (brand?.length > 0) {
+      matchStage.brand = new mongoose.Types.ObjectId(brand[0]);
+    }
+
+    if (customer?.length > 0) {
+      matchStage.customer = new mongoose.Types.ObjectId(customer[0]);
+    }
+
+
+    if (Admdenim) matchStage['InHouse'] = true;
+    if (otherthanadmdenim) matchStage['InHouse'] = false;
+
+
+    const scMatchStage: any = { isDeleted: false };
+    if (royality_approval == 'true')
+      scMatchStage['salesContracts.royality_approval'] = true;
+    if (royality_approval == 'false')
+      scMatchStage['salesContracts.royality_approval'] = false;
+
+    // const scMatchStage2: any = { isDeleted: false };
+    if (order_status == 'confirmed')
+      scMatchStage['salesContracts.order_status'] = 'confirmed';
+    if (order_status == 'forecast')
+      scMatchStage['salesContracts.order_status'] = 'forecast';
+
+
+    const basePipeline: any[] = [
       {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
+        $match: matchStage
       },
       {
-        $match: filter,
+
+        $lookup: {
+          from: 'returns',
+          localField: 'salesContract',
+          foreignField: 'salesContract',
+          as: 'returns',
+
+        }
+      },
+      {
+        $unwind: {
+          path: "$returns",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+
+      {
+        $lookup: {
+          from: "salescontracts",
+          localField: "salesContract",
+          foreignField: "_id",
+          as: "salesContracts"
+        }
+      },
+      {
+        $unwind: {
+          path: "$salesContracts",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $match: scMatchStage,
       },
       {
         $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
-              },
-            },
-          ],
-        },
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customers"
+        }
+      },
+      {
+        $unwind: {
+          path: "$customers",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "product",
+          foreignField: "_id",
+          as: "products"
+        }
+      },
+      {
+        $unwind: {
+          path: "$products",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "invoicedtls",
+          localField: "invoice",
+          foreignField: "invoice",
+          as: "invoicedtls"
+        }
+      },
+      {
+        $unwind: {
+          path: "$invoicedtls",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "brands",
+          localField: "brand",
+          foreignField: "_id",
+          as: "brands"
+        }
+      },
+      {
+        $unwind: {
+          path: "$brands",
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         $project: {
-          qty: {
-            $first: '$sale.sale_dtl.qty',
+
+
+          contract: "$salesContracts.contract",
+          salesTaxInvoiceNo: 1,
+          royalityRate: '$royalityrate',
+          saleTaxInvoiceDate: "$saletaxinvoicedate",
+          customer: "$customers.name",
+          product: "$products.name",
+          payemntDate: "$paymentDate",
+          paid: "$paid",
+          brand: "$brands.name",
+          invoiceRate: "$invoicedtls.rate",
+          invoiceQty: "$invoicedtls.qty",
+          invoiceAmount: "$invoicedtls.amount",
+          royalityAmount: "$amount",
+          returnQty: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualQty', null],
+              },
+              then: '$returns.actualQty',
+              else: 0,
+            },
           },
-          rate: {
-            $first: '$sale.sale_dtl.rate',
+          balance: {
+            $cond: {
+              if: {
+                $gt: ['$returns.balance', null],
+              },
+              then: '$returns.balance',
+              else: 0,
+            },
           },
-          amount: {
-            $first: '$sale.sale_dtl.amount',
+          returnAmount: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualAmount', null],
+              },
+              then: '$returns.actualAmount',
+              else: 0,
+            },
           },
-        },
+          netQty: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.qty', 0],
+              },
+              {
+                $ifNull: ['$returns.actualQty', 0],
+              },
+            ],
+          },
+          netAmount: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.amount', 0],
+              },
+              {
+                $ifNull: ['$returns.actualAmount', 0],
+              },
+            ],
+          },
+
+        }
+      },
+      {
+        $sort: {
+          _id: -1,
+          saletaxinvoicedate: -1
+        }
+      }
+    ]
+    const basePipelineSummary: any[] = [
+      {
+        $match: matchStage
+      },
+      {
+
+        $lookup: {
+          from: 'returns',
+          localField: 'salesContract',
+          foreignField: 'salesContract',
+          as: 'returns',
+
+        }
+      },
+      {
+        $unwind: {
+          path: "$returns",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+
+      {
+        $lookup: {
+          from: "salescontracts",
+          localField: "salesContract",
+          foreignField: "_id",
+          as: "salesContracts"
+        }
+      },
+      {
+        $unwind: {
+          path: "$salesContracts",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $match: scMatchStage,
+      },
+      {
+        $lookup: {
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customers"
+        }
+      },
+      {
+        $unwind: {
+          path: "$customers",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "product",
+          foreignField: "_id",
+          as: "products"
+        }
+      },
+      {
+        $unwind: {
+          path: "$products",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "invoicedtls",
+          localField: "invoice",
+          foreignField: "invoice",
+          as: "invoicedtls"
+        }
+      },
+      {
+        $unwind: {
+          path: "$invoicedtls",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: "brands",
+          localField: "brand",
+          foreignField: "_id",
+          as: "brands"
+        }
+      },
+      {
+        $unwind: {
+          path: "$brands",
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         $project: {
-          qty: {
-            $sum: '$qty',
-          },
-          rate: {
-            $first: '$rate',
-          },
-          amount: {
-            $first: '$amount',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '_id',
-          qty: {
-            $sum: '$qty',
-          },
-          amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const totalQty = group_by.map((item: any) => item.qty);
-    const totalAmount = group_by.map((item: any) => item.amount);
-    const RoyalityAmount = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse:false
-        },
-      },
-      {
-        $match: filter,
-      },
-
-      {
-        $group: {
-          _id: 'null',
-          Royality_Amount: {
-            $sum: '$amount',
-          },
-        },
-      },
-    ]);
-
-    const royalitymaount=RoyalityAmount.map((item)=>item.Royality_Amount)
-    
 
 
-
-
-
-    const total_records = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
-      },
-      {
-        $match: filter_records,
-      },
-    ]);
-
-    const royality = await RoyalityModel.aggregate([
-      {
-        $match: {
-          saletaxinvoicedate: {
-            $gte: new Date(
-              moment(input.fromDate).startOf('date').format('YYYY-MM-DD')
-            ),
-            $lte: new Date(
-              moment(input.toDate).endOf('date').format('YYYY-MM-DD')
-            ),
-          },
-          isDeleted: false,
-          InHouse: false,
-        },
-      },
-      {
-        $match: where,
-      },
-      {
-        $lookup: {
-          from: 'salescontracts',
-          localField: 'salesContract',
-          foreignField: '_id',
-          as: 'sale',
-          pipeline: [
-            {
-              $lookup: {
-                from: 'salescontractdtls',
-                localField: '_id',
-                foreignField: 'salesContract',
-                as: 'sale_dtl',
+          contract: "$salesContracts.contract",
+          salesTaxInvoiceNo: 1,
+          royalityRate: '$royalityrate',
+          saleTaxInvoiceDate: "$saletaxinvoicedate",
+          customer: "$customers.name",
+          product: "$products.name",
+          payemntDate: "$paymentDate",
+          paid: "$paid",
+          brand: "$brands.name",
+          invoiceRate: "$invoicedtls.rate",
+          invoiceQty: "$invoicedtls.qty",
+          invoiceAmount: "$invoicedtls.amount",
+          royalityAmount: "$amount",
+          returnQty: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualQty', null],
               },
+              then: '$returns.actualQty',
+              else: 0,
             },
-          ],
-        },
+          },
+          balance: {
+            $cond: {
+              if: {
+                $gt: ['$returns.balance', null],
+              },
+              then: '$returns.balance',
+              else: 0,
+            },
+          },
+          returnAmount: {
+            $cond: {
+              if: {
+                $gt: ['$returns.actualAmount', null],
+              },
+              then: '$returns.actualAmount',
+              else: 0,
+            },
+          },
+          netQty: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.qty', 0],
+              },
+              {
+                $ifNull: ['$returns.actualQty', 0],
+              },
+            ],
+          },
+          netAmount: {
+            $subtract: [
+              {
+                $ifNull: ['$invoicedtls.amount', 0],
+              },
+              {
+                $ifNull: ['$returns.actualAmount', 0],
+              },
+            ],
+          },
+
+        }
       },
       {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
+        $sort: {
+          _id: -1,
+          saletaxinvoicedate: -1
+        }
+      }
+    ]
+    const sortStage = { $sort: { totalInvoiceQtySum: -1 } };
+    const groupStage = {
+      $group: {
+        _id: groupId,
+        product: {
+          $first: "$product"
         },
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'product',
-          foreignField: '_id',
-          as: 'product',
+
+        brand: {
+          $first: "$brand"
         },
+        customer: {
+          $first: "$customer"
+        },
+        totalInvoiceQtySum: {
+          $sum: "$invoiceQty"
+        },
+        totalInvoiceAmountSum: {
+          $sum: "$invoiceAmount"
+        },
+        totalRoyalityAmountSum: {
+          $sum: "$royalityAmount"
+        },
+        totalReturnQty: { $sum: '$returnQty' },
+        totalReturnAmount: { $sum: '$returnAmount' },
+        totalBalance: { $sum: '$balance' },
+        totalNetQty: { $sum: '$netQty' },
+        totalNetAmount: { $sum: '$netAmount' },
+
       },
-     
+
+
+    }
+    const groupStageSummary = {
+      $group: {
+        _id: '',
+        // product: {
+        //   $first: "$product"
+        // },
+
+        // brand: {
+        //   $first: "$brand"
+        // },
+        // customer: {
+        //   $first: "$customer"
+        // },
+        totalInvoiceQtySum: {
+          $sum: "$invoiceQty"
+        },
+        totalInvoiceAmountSum: {
+          $sum: "$invoiceAmount"
+        },
+        totalRoyalityAmountSum: {
+          $sum: "$royalityAmount"
+        },
+        totalReturnQty: { $sum: '$returnQty' },
+        totalReturnAmount: { $sum: '$returnAmount' },
+        totalBalance: { $sum: '$balance' },
+        totalNetQty: { $sum: '$netQty' },
+        totalNetAmount: { $sum: '$netAmount' },
+      },
+
+
+    }
+
+    // If grouping is not required, we can skip the group stage
+    const dataPipeline = shouldGroup
+      ? [...basePipeline, groupStage, sortStage]
+      : [...basePipeline, sortStage]
+
+    // Count pipeline for total records
+    // const countPipeline = shouldGroup 
+    // ? [...basePipeline, groupStage, { $count: 'totalRecords' }]
+    // : [...basePipeline, { $count: 'totalRecords' }];
+
+
+    // Summary pipeline for total records
+    const summaryPipeline = shouldGroup
+      ? [...basePipelineSummary, groupStageSummary]
+      : [
+        ...basePipelineSummary,
+        {
+          $group: {
+            _id: null,
+            totalInvoiceQtySum: {
+              $sum: "$invoiceQty"
+            },
+            totalInvoiceAmountSum: {
+              $sum: "$invoiceAmount"
+            },
+            totalRoyalityAmountSum: {
+              $sum: "$royalityAmount"
+            },
+            totalReturnQty: { $sum: '$returnQty' },
+            totalReturnAmount: { $sum: '$returnAmount' },
+            totalBalance: { $sum: '$balance' },
+            totalNetQty: { $sum: '$netQty' },
+            totalNetAmount: { $sum: '$netAmount' },
+          },
+        },
+      ];
+    // Executing the pipelines in parallel
+    const [royalitydtl, summaryResult] = await Promise.all([
+      RoyalityModel.aggregate(dataPipeline, { allowDiskUse: true }),
+      // RoyalityModel.aggregate(countPipeline, { allowDiskUse: true }),
+      RoyalityModel.aggregate(summaryPipeline, { allowDiskUse: true }),
     ]);
-    const result = {
-      royality_dtl: royality,
-      paginated_result: royality.length,
-      total_records: total_records.length,
-      totalQty: totalQty,
-      totalAmount: totalAmount,
-      RoyalityAmount:RoyalityAmount
+
+    // Extracting total records and summary from the results
+    // const totalRecords = totalResult?.[0]?.totalRecords || 0;
+    const summary = summaryResult?.[0] || {
+      totalInvoiceQtySum: 0,
+      totalInvoiceAmountSum: 0,
+      totalReturnQty: 0,
+      totalReturnAmount: 0,
+      totalBalance: 0,
+      totalNetQty: 0,
+      totalNetAmount: 0,
+      totalRoyalityAmountSum: 0,
     };
-    return result;
+    return {
+      royalitydtl,
+      summary,
+      // pagination: {
+      //   page: pageno,
+      //   perPage,
+      //   totalRecords,
+      //   totalPages: Math.ceil(totalRecords / perPage),
+      // },
+    };
+  } catch (e) {
+    console.error('Error in findRoyalityDtlsByDate:', e);
+    throw e;
   }
 
 }

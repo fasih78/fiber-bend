@@ -12,7 +12,9 @@ import {
   getPaymentfalseHandler,
   InvoicepaginationHandler,
   findInvoiceDtlsByDatePrintHandler,
-  invoiceReportfilterSalesContractHandler
+  invoiceReportfilterSalesContractHandler,
+  findNetInvoiceDtlsByDateHandler,
+  findNetInovioceDtlsByDatePrintHandler
 } from './invoice.controller';
 import { $ref } from './invoice.schema';
 import { InvoiceReportSchema } from './invoice.schema';
@@ -224,6 +226,32 @@ const invoiceRoutes = async (server: FastifyInstance) => {
       },
     },
     getPaymentfalseHandler
+  );
+  server.post(
+    '/details/dtl/dtl-by-date-Net-Invoice-Dtls',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Invoice'],
+        body: $ref('invoiceReportSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findNetInvoiceDtlsByDateHandler
+  );
+  server.post(
+    '/details/dtl/dtl-by-date-Net-Invoice-Dtls-Print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Invoice'],
+        body: $ref('invoicePrintSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findNetInovioceDtlsByDatePrintHandler
   );
 };
 

@@ -4,6 +4,7 @@ import {
   deleteMachineByIdHandler,
   deleteMachinesHandler,
   getMachinesHandler,
+  getMachinesHandlerPagination,
   getNewMachineIdHandler,
   updateMachineByIdHandler,
 } from './machine.controller';
@@ -38,6 +39,21 @@ const machineRoutes = async (server: FastifyInstance) => {
     getNewMachineIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Machine'],
+        security: [{ bearerToken: [] }],
+        body:$ref('machinePaginationSchema')
+        // response: {
+        //   200: $ref('getMachinesSchema'),
+        // },
+      },
+    },
+    getMachinesHandlerPagination
+  );
   server.get(
     '/',
     {

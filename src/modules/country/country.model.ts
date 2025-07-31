@@ -9,6 +9,7 @@ export class Country {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
 }

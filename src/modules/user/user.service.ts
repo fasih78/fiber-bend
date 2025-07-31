@@ -3,6 +3,7 @@ import { UserModel } from './user.model';
 import { CreateUserInput } from './user.schema';
 
 export const createUser = async (input: CreateUserInput) => {
+
   const { password, ...rest } = input;
 
   const { hash, salt } = hashPassword(password);

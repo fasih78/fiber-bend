@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { optional, z } from 'zod';
 import { buildJsonSchemas } from 'fastify-zod';
 import { type } from 'os';
 
@@ -9,10 +9,14 @@ const shipmentCore = {
   gpNumber: z.string(),
   gpDate: z.string(),
   dcNumber: z.string(),
+  return:z.boolean().optional(),
   dcDate: z.string(),
   ShipmentDtl: z.array(z.any()).optional(),
+  ShipmentLotDtl: z.array(z.any()).optional(),
   salesContract: z.string(),
   specialInstruction: z.string(),
+
+
 };
 
 const createShipmentSchema = z.object(shipmentCore);
@@ -22,6 +26,7 @@ export type CreateShipmentSchema = z.infer<typeof createShipmentSchema>;
 const shipmentReportSchema = z.object({
   fromDate: z.date(),
   toDate: z.date(),
+  brand: z.array(z.any()),
   salesContract: z.array(z.any()),
   customer: z.array(z.any()),
   product_id: z.array(z.any()),
@@ -32,7 +37,22 @@ const shipmentReportSchema = z.object({
   productgroup: z.string(),
   salesContractgroup: z.string(),
   customergroup: z.string(),
+  brandgroup: z.string(),
+  Adm: z.string().optional(),
+  nonAdm: z.string().optional(),
+  transactiongroup: z.string().optional(),
+  royality_approval: z.string().optional(),
+   order_status: z.string().optional(),
 });
+
+const shipmentNetReportSchema = z.object({
+  fromDate: z.date(),
+  toDate: z.date(),
+  pageno: z.number(),
+  perPage: z.number(),
+
+
+})
 const shipegroupSchema = z.object({
   product: z.string(),
   salesContract: z.string(),
@@ -41,6 +61,7 @@ const shipegroupSchema = z.object({
 const ShipmentpageSchema = z.object({
   pageno: z.number(),
   perPage: z.number(),
+  contract: z.string(),
 });
 
 const shipmentprintSchema = z.object({
@@ -48,12 +69,18 @@ const shipmentprintSchema = z.object({
   toDate: z.date(),
   salesContract: z.array(z.any()),
   customer: z.array(z.any()),
+  brand: z.array(z.any()),
   product_id: z.array(z.any()),
   dcNumber: z.string(),
   gpNumber: z.string(),
   productgroup: z.string().optional(),
   salesContractgroup: z.string().optional(),
   customergroup: z.string().optional(),
+  brandgroup: z.string(),
+  Adm: z.string().optional(),
+  nonAdm: z.string().optional(),
+  transactiongroup: z.string().optional(),
+  royality_approval: z.string().optional(),
 });
 
 export type createShipmentSchema = z.infer<typeof createShipmentSchema>;
@@ -62,6 +89,7 @@ export type ShipmentReportSchema = z.infer<typeof shipmentReportSchema>;
 export type ShipmentgroupSchema = z.infer<typeof shipegroupSchema>;
 export type ShipmentpaginationSchema = z.infer<typeof ShipmentpageSchema>;
 export type ShipmentPrintSchema = z.infer<typeof shipmentprintSchema>;
+export type ShipmentNetReportSchema = z.infer<typeof shipmentNetReportSchema>;
 export const { schemas: shipmentSchema, $ref } = buildJsonSchemas(
   {
     createShipmentSchema,
@@ -69,6 +97,8 @@ export const { schemas: shipmentSchema, $ref } = buildJsonSchemas(
     shipegroupSchema,
     ShipmentpageSchema,
     shipmentprintSchema,
+    shipmentNetReportSchema,
+    
   },
   { $id: 'shipmentSchema' }
 );

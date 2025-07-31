@@ -12,6 +12,7 @@ export class Customer {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
 

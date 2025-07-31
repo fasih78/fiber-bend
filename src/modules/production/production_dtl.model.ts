@@ -20,6 +20,13 @@ export class ProductionDtl {
   bales: string;
 
   @prop({
+    type: String,
+  })
+  machine_no: string;
+
+
+
+  @prop({
     type: Number,
   })
   qty: number;
@@ -39,6 +46,7 @@ export class ProductionDtl {
 
   @prop({ ref: () => ProductionModel })
   production: Ref<typeof ProductionModel>;
+  
   @prop({ ref: () => MachineModel })
   machine: Ref<typeof MachineModel>;
 }

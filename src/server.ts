@@ -35,18 +35,37 @@ import { royalitySchema } from './modules/royality/royality.schema';
 import { royalityRoutes } from './modules/royality/royality.routes';
 import { shipviaSchemas } from './modules/shipvia/shipvia.schema';
 import shipviaRoutes from './modules/shipvia/shipvia.routes';
-
+import userHistroyRoutes from './user_histroy/userhistroy.route';
+import {returnSchema}from './modules/return/return.schema'
+import returnRoutes from'./modules/return/return.routes'
+import * as fastifySession from 'fastify-session';
+import { userLog } from './user_histroy/userhistroy.service';
+import { config } from './utils/config';
+import { userHistroySchema } from './user_histroy/userhistroy.schema';
+const fastify = require('fastify')();
 const buildServer = async () => {
   const server = await createServer();
 
   // Middlewares
   server.decorate('authenticate', authenticate);
-
+  // server.register(require('fastify-cookie'));
   // Hooks
   server.addHook('preHandler', (req, reply, next) => {
     req.jwt = server.jwt;
     return next();
   });
+  fastify.register(require('@fastify/cors'), {
+    origin: true,  // Allow requests from any origin
+    methods: ['GET', 'PUT', 'POST', 'DELETE'], // Allow these HTTP methods
+  });
+
+  fastify.register(fastifySession, {
+    secret: config.SECRET_KEY, // Change this to a secure secret key
+    cookie: { secure: false },
+    resave: true,
+    saveUninitialized: false,
+  })
+
 
   // Schemas
   for (const schema of [
@@ -67,17 +86,23 @@ const buildServer = async () => {
     ...payementSchema,
     ...royalitySchema,
     ...shipviaSchemas,
+    ...userHistroySchema,
+    ...returnSchema
   ]) {
     server.addSchema(schema);
   }
 
-  // Routes
+
   server.get('/healthcheck', { schema: { hide: true } }, async function () {
     return { status: 'OK' };
   });
 
   server.register(jwt, {
     secret: process.env.JWT_SECRET!,
+    // sign: {
+    //   expiresIn: '10m',
+    // },
+
   });
 
   server.register(userRoutes, { prefix: 'user' });
@@ -97,6 +122,8 @@ const buildServer = async () => {
   server.register(paymentRoutes, { prefix: 'payment' });
   server.register(royalityRoutes, { prefix: 'royality' });
   server.register(shipviaRoutes, { prefix: 'shipvia' });
+  server.register(userHistroyRoutes, { prefix: 'userHistroy' })
+  server.register(returnRoutes, { prefix: 'return' })
   return server;
 };
 

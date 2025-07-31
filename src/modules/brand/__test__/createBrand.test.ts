@@ -22,6 +22,7 @@ describe('POST "/brand" route', () => {
 
     await server.ready();
 
+    
     const payload = {
       id: 1,
       name: 'mock name',
@@ -30,7 +31,11 @@ describe('POST "/brand" route', () => {
     const jwt = server.jwt.sign({
       email: 'admin@gmail.com',
       name: 'Admin',
-    });
+    },
+      // {
+      //   expiresIn: '5m', // Token will expire in 2 hours
+      // }
+    );
 
     const headers = {
       Authorization: `Bearer ${jwt}`,

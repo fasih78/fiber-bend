@@ -4,6 +4,7 @@ import {
   deleteCurrenciesHandler,
   deleteCurrencyByIdHandler,
   getCurrenciesHandler,
+  getCurrenciesHandlerPagination,
   getNewCurrencyIdHandler,
   updateCurrencyByIdHandler,
 } from './currency.controller';
@@ -38,6 +39,21 @@ const currencyRoutes = async (server: FastifyInstance) => {
     getNewCurrencyIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Currency'],
+        security: [{ bearerToken: [] }],
+        body:$ref('currencyPaginationSchema')
+        // response: {
+        //   200: $ref('getCurrencysSchema'),
+        // },
+      },
+    },
+    getCurrenciesHandlerPagination
+  );
   server.get(
     '/',
     {
@@ -52,7 +68,7 @@ const currencyRoutes = async (server: FastifyInstance) => {
     },
     getCurrenciesHandler
   );
-
+  
   server.delete(
     '/all',
     {

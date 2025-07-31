@@ -4,6 +4,7 @@ import { ProductModel } from '../product/product.model';
 import { InvoiceModel } from './invoice.model';
 import { CustomerModel } from '../customer/customer.model';
 import { SalesContractModel } from '../sales_contract/sales_contract.model';
+import { BrandModel } from '../brand/brand.model';
 export class InvoiceDtl {
   @prop({
     type: Number,
@@ -57,11 +58,20 @@ export class InvoiceDtl {
     default: false,
   })
   payment: boolean;
-  
+
   @prop({
     type: Date,
   })
   date: Date;
+  @prop({
+    type: String,
+  })
+  contract: string;
+  @prop({
+    type: Boolean,
+    default: false,
+  })
+  adm_invoice: boolean;
 
   @prop({ ref: () => ProductModel })
   product: Ref<typeof ProductModel>;
@@ -77,6 +87,8 @@ export class InvoiceDtl {
 
   @prop({ ref: () => SalesContractModel })
   salesContract: Ref<typeof SalesContractModel>;
+  @prop({ ref: () => BrandModel })
+  brand: Ref<typeof BrandModel>;
 }
 
 export const InvoiceDtlModel = getModelForClass(InvoiceDtl, {

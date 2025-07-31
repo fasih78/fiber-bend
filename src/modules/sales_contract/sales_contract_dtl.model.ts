@@ -4,6 +4,7 @@ import { ProductModel } from '../product/product.model';
 import { SalesContractModel } from './sales_contract.model';
 import { CustomerModel } from '../customer/customer.model';
 import { BrandModel } from '../brand/brand.model';
+import { boolean } from 'zod';
 
 export class SalesContractDtl {
   @prop({
@@ -53,27 +54,50 @@ export class SalesContractDtl {
   exchangeRate: number;
   @prop({
     type: Boolean,
-    default: false,
   })
   shipment: boolean;
   @prop({
     type: Boolean,
-    default:false
   })
   royality: boolean;
+  @prop({
+    type: Boolean,
+    default: false,
+  })
+  InHouse: boolean;
+
+  @prop({
+    type: Boolean,
+  })
+  invoice: boolean;
+  @prop({
+    type: String,
+  })
+  order_status: string;
+  @prop({
+    type: Boolean,
+  })
+  royality_nonadm: boolean;
+  
+  @prop({
+    type:Boolean
+  })
+  royality_approval:boolean
+ 
+
   // royality for other than adm denim but only for group qty purpose of adm denim"
   @prop({ ref: () => ProductModel })
   product: Ref<typeof ProductModel>;
 
   @prop({ ref: () => CurrencyModel })
   currency: Ref<typeof CurrencyModel>;
-  
+
   @prop({ ref: () => CustomerModel })
   customer: Ref<typeof CustomerModel>;
 
   @prop({ ref: () => SalesContractModel })
   salesContract: Ref<typeof SalesContractModel>;
-  
+
   @prop({ ref: () => BrandModel })
   brand: Ref<typeof BrandModel>;
 }

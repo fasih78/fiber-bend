@@ -5,6 +5,7 @@ import moment from 'moment';
 import { SalesContractModel } from '../sales_contract/sales_contract.model';
 import { CustomerModel } from '../customer/customer.model';
 import { ProductModel } from '../product/product.model';
+import { BrandModel } from '../brand/brand.model';
 export class Royality {
   @prop({
     type: Number,
@@ -35,7 +36,10 @@ export class Royality {
     type: Date,
   })
   saletaxinvoicedate: Date;
-
+  @prop({
+    type: Date,
+  })
+  shipment_date: Date;
   @prop({
     type: Boolean,
     default: false,
@@ -56,8 +60,16 @@ export class Royality {
     type: Boolean,
     default: false,
   })
-  InHouse : boolean;
-
+  InHouse: boolean;
+ @prop({
+    type: Boolean,
+    default: false,
+  })
+  return: boolean;
+  @prop({
+    type: String,
+  })
+  contract: string;
 
   @prop({ ref: () => PaymentModel })
   payment: Ref<typeof PaymentModel>;
@@ -73,6 +85,9 @@ export class Royality {
 
   @prop({ ref: () => ProductModel })
   product: Ref<typeof ProductModel>;
+
+  @prop({ ref: () => BrandModel })
+  brand: Ref<typeof BrandModel>;
 }
 
 export const RoyalityModel = getModelForClass(Royality, {

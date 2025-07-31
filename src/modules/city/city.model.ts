@@ -9,6 +9,7 @@ export class City {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
 }

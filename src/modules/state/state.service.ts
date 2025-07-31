@@ -1,7 +1,18 @@
 import { StateModel } from './state.model';
-import { CreateStateSchema } from './state.schema';
+import { CreateStateSchema, StatePaginationSchema } from './state.schema';
 
 export const createState = async (input: CreateStateSchema) => {
+
+  const name = input.name
+  const trimmedName = name.trim();
+
+  console.log(`Searching for state with name: ${trimmedName}`);
+  const existingState = await StateModel.findOne({ "name": trimmedName });
+
+console.log(existingState);
+  if (existingState) {
+    return 'State already exists with this name in a case-sensitive manner.';
+  }
   const state = await StateModel.create({
     ...input,
   });
@@ -22,6 +33,45 @@ export const getNewStateId = async () => {
   return newId;
 };
 
+export const findStatesPagination = async (input:StatePaginationSchema) => {
+  const limit = input.perPage;
+  const skipCount = (input.pageno - 1) * limit;
+  const staterecord = await StateModel.countDocuments();
+  const searchQuery = new RegExp(`^${input?.name}`, 'i');
+  const state_record =  await StateModel.find({name:{$regex:searchQuery}})
+  if(input.name !== ''){
+  const brand = await StateModel.aggregate([
+    {
+      $match:{
+        name:{$regex:searchQuery}
+      }
+    },
+    {$skip:skipCount},
+    {$limit:limit},
+    {$sort:{id:1}}
+  ])
+  const result = {
+    brand:brand,
+    total_records:state_record.length
+  }
+  
+  return result ;
+}
+else {
+  const brand = await StateModel.aggregate([
+ 
+    {$skip:skipCount},
+    {$limit:limit},
+    {$sort:{id:1}}
+  ])
+  const result = {
+    brand:brand,
+    total_records:staterecord
+  }
+  
+  return result;
+}
+};
 export const findStates = async () => {
   const state = await StateModel.find().lean();
   const records = state.length;
@@ -31,7 +81,6 @@ export const findStates = async () => {
   };
   return result;
 };
-
 export const findStateById = async (id: string) => {
   return await StateModel.findById(id);
 };

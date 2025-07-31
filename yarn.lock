@@ -1325,6 +1325,14 @@
     ajv-formats "^2.1.1"
     fast-uri "^2.0.0"
 
+"@fastify/cookie@^11.0.2":
+  version "11.0.2"
+  resolved "https://registry.npmjs.org/@fastify/cookie/-/cookie-11.0.2.tgz"
+  integrity sha512-GWdwdGlgJxyvNv+QcKiGNevSspMQXncjMZ1J8IvuDQk0jvkzgWWZFNC2En3s+nHndZBGV8IbLwOI/sxCZw/mzA==
+  dependencies:
+    cookie "^1.0.0"
+    fastify-plugin "^5.0.0"
+
 "@fastify/cors@^8.2.0":
   version "8.2.0"
   resolved "https://registry.npmjs.org/@fastify/cors/-/cors-8.2.0.tgz"
@@ -2528,10 +2536,20 @@ convert-to-spaces@^1.0.1:
   resolved "https://registry.npmjs.org/convert-to-spaces/-/convert-to-spaces-1.0.2.tgz"
   integrity sha512-cj09EBuObp9gZNQCzc7hByQyrs6jVGE+o9kSJmeUoj+GiPiJvi5LYqEH/Hmme4+MTLHM+Ejtq+FChpjjEnsPdQ==
 
+cookie-signature@^1.1.0:
+  version "1.2.2"
+  resolved "https://registry.npmjs.org/cookie-signature/-/cookie-signature-1.2.2.tgz"
+  integrity sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==
+
 cookie@^0.5.0:
   version "0.5.0"
   resolved "https://registry.npmjs.org/cookie/-/cookie-0.5.0.tgz"
   integrity sha512-YZ3GUyn/o8gfKJlnlX7g7xq4gyO6OSuhGPKaaGssGB2qgDUS0gPgtTvoyZLTt9Ab6dC4hfc9dV5arkvc/OCmrw==
+
+cookie@^1.0.0:
+  version "1.0.2"
+  resolved "https://registry.npmjs.org/cookie/-/cookie-1.0.2.tgz"
+  integrity sha512-9Kr/j4O16ISv8zBBhJoi4bXOYNTkFLOqSL3UDB0njXxCXNezjeyVrJyGOWtgfs/q2km1gwBcfH8q1yEGoMYunA==
 
 cookiejar@^2.1.4:
   version "2.1.4"
@@ -2580,10 +2598,10 @@ date-fns@^2.16.1:
   resolved "https://registry.npmjs.org/date-fns/-/date-fns-2.29.3.tgz"
   integrity sha512-dDCnyH2WnnKusqvZZ6+jA1O51Ibt8ZMRNkDZdyAyK4YfbDwa/cEmuztzG5pk6hqlp9aSBPYcjOlktquahGwGeA==
 
-dayjs@^1.11.7:
-  version "1.11.7"
-  resolved "https://registry.npmjs.org/dayjs/-/dayjs-1.11.7.tgz"
-  integrity sha512-+Yw9U6YO5TQohxLcIkrXBeY73WP3ejHWVvx8XCk3gxvQDCTEmS48ZrSZCKciI7Bhl/uCMyxYtE9UqRILmFphkQ==
+dayjs@^1.11.13:
+  version "1.11.13"
+  resolved "https://registry.npmjs.org/dayjs/-/dayjs-1.11.13.tgz"
+  integrity sha512-oaMBel6gjolK862uaPQOVTA7q3TZhuSvuMQAAglQDOWYO9A91IrAOUJEyKVlqJlHE0vq5p5UXxzdPfMH/x6xNg==
 
 debug@^4.0.0, debug@^4.1.0, debug@^4.1.1, debug@^4.3.4, debug@4.x:
   version "4.3.4"
@@ -2966,6 +2984,11 @@ fastfall@^1.5.0:
   dependencies:
     reusify "^1.0.0"
 
+fastify-plugin@^3.0.0:
+  version "3.0.1"
+  resolved "https://registry.npmjs.org/fastify-plugin/-/fastify-plugin-3.0.1.tgz"
+  integrity sha512-qKcDXmuZadJqdTm6vlCqioEbyewF60b/0LOFCcYN1B6BIZGlYJumWWOYs70SFYLDAH4YqdE1cxH/RKMG7rFxgA==
+
 fastify-plugin@^3.0.1:
   version "3.0.1"
   resolved "https://registry.npmjs.org/fastify-plugin/-/fastify-plugin-3.0.1.tgz"
@@ -2975,6 +2998,20 @@ fastify-plugin@^4.0.0:
   version "4.5.0"
   resolved "https://registry.npmjs.org/fastify-plugin/-/fastify-plugin-4.5.0.tgz"
   integrity sha512-79ak0JxddO0utAXAQ5ccKhvs6vX2MGyHHMMsmZkBANrq3hXc1CHzvNPHOcvTsVMEPl5I+NT+RO4YKMGehOfSIg==
+
+fastify-plugin@^5.0.0:
+  version "5.0.1"
+  resolved "https://registry.npmjs.org/fastify-plugin/-/fastify-plugin-5.0.1.tgz"
+  integrity sha512-HCxs+YnRaWzCl+cWRYFnHmeRFyR5GVnJTAaCJQiYzQSDwK9MgJdyAsuL3nh0EWRCYMgQ5MeziymvmAhUHYHDUQ==
+
+fastify-session@^5.2.1:
+  version "5.2.1"
+  resolved "https://registry.npmjs.org/fastify-session/-/fastify-session-5.2.1.tgz"
+  integrity sha512-2ZOLPGPeeBE35HOgYD4/v9c304IGF2ExOh35tuKegrB3QSNB+kKeqqzUXrUJ2h0Vr5nTyvrimtPAPQZG963vOw==
+  dependencies:
+    cookie-signature "^1.1.0"
+    fastify-plugin "^3.0.0"
+    uid-safe "^2.1.5"
 
 fastify-zod@^1.2.0:
   version "1.2.0"
@@ -4638,6 +4675,11 @@ quick-lru@^4.0.1:
   resolved "https://registry.npmjs.org/quick-lru/-/quick-lru-4.0.1.tgz"
   integrity sha512-ARhCpm70fzdcvNQfPoy49IaanKkTlRWF2JMzqhcJbhSFRZv7nPTvZJdcY7301IPmvW+/p0RgIWnQDLJxifsQ7g==
 
+random-bytes@~1.0.0:
+  version "1.0.0"
+  resolved "https://registry.npmjs.org/random-bytes/-/random-bytes-1.0.0.tgz"
+  integrity sha512-iv7LhNVO047HzYR3InF6pUcUsPQiHTM1Qal51DcGSuZFBil1aBBWG5eHPNek7bvILMaYJ/8RU1e8w1AMdHmLQQ==
+
 range-parser@~1.2.1:
   version "1.2.1"
   resolved "https://registry.npmjs.org/range-parser/-/range-parser-1.2.1.tgz"
@@ -5645,6 +5687,13 @@ ufo@^1.0.1:
   version "1.0.1"
   resolved "https://registry.npmjs.org/ufo/-/ufo-1.0.1.tgz"
   integrity sha512-boAm74ubXHY7KJQZLlXrtMz52qFvpsbOxDcZOnw/Wf+LS4Mmyu7JxmzD4tDLtUQtmZECypJ0FrCz4QIe6dvKRA==
+
+uid-safe@^2.1.5:
+  version "2.1.5"
+  resolved "https://registry.npmjs.org/uid-safe/-/uid-safe-2.1.5.tgz"
+  integrity sha512-KPHm4VL5dDXKz01UuEd88Df+KzynaohSL9fBh096KWAxSKZQDI2uBrVqtvRM4rwrIrRRKsdLNML/lnaaVSRioA==
+  dependencies:
+    random-bytes "~1.0.0"
 
 unicode-length@^2.0.2:
   version "2.1.0"

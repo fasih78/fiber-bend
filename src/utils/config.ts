@@ -9,8 +9,9 @@ const schema = Type.Object({
     default: '0.0.0.0',
   }),
   DATABASE_URL: Type.String({}),
-});
 
+SECRET_KEY: Type.String({}),
+});
 type Env = Static<typeof schema>;
 
 export const config = envSchema<Env>({

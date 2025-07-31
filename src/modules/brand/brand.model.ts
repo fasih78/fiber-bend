@@ -9,6 +9,8 @@ export class Brand {
 
   @prop({
     type: String,
+    unique: true,
+
   })
   name: string;
 }

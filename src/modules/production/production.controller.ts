@@ -5,6 +5,7 @@ import {
   LotNumSchema,
   ProductionPaginationSchema,
   ProductionReportPrintSchema,
+  ProductionLotQtyAdjustSchema,
 } from './production.schema';
 import {
   createProduction,
@@ -17,9 +18,18 @@ import {
   updateProductionById,
   getLotNum,
   findProductionsIsDeletedDtlsByDate,
-  findProductionsDtlsPrintByDate
+  findProductionsDtlsPrintByDate,
+  productionLotQtyAdjust
 } from './production.service';
-
+import { ObjectId } from 'mongoose';
+import { userLog } from '../../user_histroy/userhistroy.service';
+interface DecodedPayload {
+  _doc: {
+    email: string;
+    name: string;
+    _id: ObjectId;
+  };
+}
 // @desc    Create new production
 // @route   POST /production/
 // @access  Private
@@ -30,13 +40,39 @@ export const createProductionHandler = async (
   reply: FastifyReply
 ) => {
   const body = request.body;
-
+  let token: string | undefined;
+  let production;
   try {
-    const production = await createProduction(body);
+    production = await createProduction(body);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip'];
 
-    return reply.code(201).send(production);
-  } catch (e) {
-    return reply.code(400).send(e);
+    type publicIP = string | undefined;
+    const ipAddress: any = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(' ')[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!production) {
+      console.error('Failed to create production!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress, body);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to create production!' });
+    } else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress, body);
+      //////////// user log //////////
+      return reply.code(201).send(production);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error);
+    return reply.code(400).send({ error: 'An error occurred' });
   }
 };
 
@@ -62,16 +98,14 @@ export const getNewProductionIdHandler = async (
 // };
 export const ProductionpaginaionHandler = async (
   request: FastifyRequest<{
-    Body:ProductionPaginationSchema;
+    Body: ProductionPaginationSchema;
   }>,
   reply: FastifyReply
 ) => {
   const body = request.body;
 
-
-    const production =await findProductions(body);
-return production
-  
+  const production = await findProductions(body);
+  return production;
 };
 
 // @desc    Delete all productions
@@ -107,9 +141,40 @@ export const deleteProductionByIdHandler = async (
   reply: FastifyReply
 ) => {
   const params = request.params;
-  const productions = await deleteProductionById(params['id']);
+  let token: string | undefined;
+  let production;
+  try {
+    production = await deleteProductionById(params['id']);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip'];
 
-  return productions;
+    type publicIP = string | undefined;
+    const ipAddress: any = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(' ')[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!production) {
+      console.error('Failed to delete production!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress, params);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to delete production!' });
+    } else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress, params);
+      //////////// user log //////////
+      return reply.code(201).send(production);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error);
+    return reply.code(400).send({ error: 'An error occurred' });
+  }
 };
 
 // @desc    Update production by id
@@ -124,10 +189,41 @@ export const updateProductionByIdHandler = async (
 ) => {
   const params = request.params;
   const body = request.body;
+  let token: string | undefined;
+  let production;
+  try {
+    production = await updateProductionById(params['id'], body);
 
-  const productions = await updateProductionById(params['id'], body);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip'];
 
-  return productions;
+    type publicIP = string | undefined;
+    const ipAddress: any = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(' ')[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!production) {
+      console.error('Failed to update production!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress, params);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to update production!' });
+    } else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress, params);
+      //////////// user log //////////
+      return reply.code(201).send(production);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error);
+    return reply.code(400).send({ error: 'An error occurred' });
+  }
 };
 
 // @desc    Production details by date
@@ -159,12 +255,6 @@ export const findProductionsDtlsPrintByDateHandler = async (
   return productions;
 };
 
-
-
-
-
-
-
 export const getLotNumHandler = async (
   request: FastifyRequest<{
     Body: LotNumSchema;
@@ -188,4 +278,16 @@ export const findProductionsisDeletedDtlsByDateHandler = async (
   const isDeleted = await findProductionsIsDeletedDtlsByDate(body);
 
   return isDeleted;
+};
+export const productionLotQtyAdjustHandler = async (
+  request: FastifyRequest<{
+    Body: ProductionLotQtyAdjustSchema;
+  }>,
+  reply: FastifyReply
+) => {
+  const body = request.body;
+
+  const production = await productionLotQtyAdjust(body);
+
+  return production;
 };

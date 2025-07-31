@@ -7,6 +7,12 @@ import {
   getNewProductIdHandler,
   updateProductByIdHandler,
   Product_drop_downHandler,
+  getProductsHandlerPagination,
+  stockReportHandler,
+  stockReportPrintHandler,
+  findProductDtlsHandler,
+  productSummarydtlsByDateHandler,
+  productSummarydtlsByDatePrintHandler
 } from './product.controller';
 import { $ref } from './product.schema';
 
@@ -39,6 +45,21 @@ const productRoutes = async (server: FastifyInstance) => {
     getNewProductIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        security: [{ bearerToken: [] }],
+        body:$ref('productPaginationSchema')
+        // response: {
+        //   200: $ref('getProductsSchema'),
+        // },
+      },
+    },
+    getProductsHandlerPagination
+  );
   server.get(
     '/',
     {
@@ -130,9 +151,87 @@ const productRoutes = async (server: FastifyInstance) => {
   );
 
 
+  server.post(
+    '/stockreport',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        security: [{ bearerToken: [] }],
+        body: $ref('stockTransactionReportSchema'),
+        // response: {
+        //   200: $ref('getProductsSchema'),
+        // },
+      },
+    },
+    stockReportHandler
+  );
+  server.post(
+    '/stockreport-print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        security: [{ bearerToken: [] }],
+        body: $ref('productPrintSchema'),
+        // response: {
+        //   200: $ref('getProductsSchema'),
+        // },
+      },
+    },
+    stockReportPrintHandler
+  );
 
-
-
+  server.get(
+    '/details/:id',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        params: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: 'user id',
+            },
+          },
+        },
+        security: [{ bearerToken: [] }],
+      },
+    },
+    findProductDtlsHandler
+  );
+  server.post(
+    '/product-summary',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        security: [{ bearerToken: [] }],
+        body: $ref('productSummarySchema'),
+        // response: {
+        //   200: $ref('getProductsSchema'),
+        // },
+      },
+    },
+    productSummarydtlsByDateHandler
+  );
+  server.post(
+    '/product-summary-print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Product'],
+        security: [{ bearerToken: [] }],
+        body: $ref('productSummaryPrintSchema'),
+        // response: {
+        //   200: $ref('getProductsSchema'),
+        // },
+      },
+    },
+    productSummarydtlsByDatePrintHandler
+  );
 
 };
 

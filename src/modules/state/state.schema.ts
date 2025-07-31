@@ -16,18 +16,23 @@ const createStateSchema = z.object(stateCore);
 const newStateId = z.object({
   id: z.number({}),
 });
-
+const statePaginationSchema=z.object({
+  pageno: z.number(),
+  perPage: z.number(),
+  name:z.string().optional(),
+})
 const getStatesSchema = z
   .array(z.object({ _id: z.string(), ...stateCore }))
   .refine((elements) => refineZod(elements, ['_id', 'id', 'name']));
 
 export type CreateStateSchema = z.infer<typeof createStateSchema>;
-
+export type StatePaginationSchema = z.infer<typeof statePaginationSchema>;
 export const { schemas: stateSchemas, $ref } = buildJsonSchemas(
   {
     createStateSchema,
     getStatesSchema,
     newStateId,
+    statePaginationSchema
   },
   { $id: 'stateSchemas' }
 );

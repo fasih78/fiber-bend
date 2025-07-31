@@ -23,6 +23,11 @@ export class Production {
     default: false,
   })
   isDeleted: boolean;
+  @prop({
+    type: String,
+   
+  })
+  lot_no: string;
 
   @prop({ ref: () => MachineModel })
   machine: Ref<typeof MachineModel>;

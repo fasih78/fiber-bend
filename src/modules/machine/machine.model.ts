@@ -9,6 +9,7 @@ export class Machine {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
 }

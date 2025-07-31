@@ -11,10 +11,25 @@ import {
   findUsers,
   updatePassword,
 } from './user.service';
+const fastify = require('fastify')();
+import { config } from '../../utils/config';
 
-// @desc    Register new user
-// @route   POST /user/signup
-// @access  Private
+import * as fastifySession from 'fastify-session';
+import { userLog } from '../../user_histroy/userhistroy.service';
+import fastifyJwt, { JWT } from '@fastify/jwt';
+import jwt from '@fastify/jwt';
+import base64url from 'base64url';
+import { ObjectId } from 'mongoose';
+interface DecodedPayload {
+  _doc: {
+    email: string;
+    name: string;
+    _id: ObjectId;
+
+  };
+}
+
+
 export const registerUserHandler = async (
   request: FastifyRequest<{
     Body: CreateUserInput;
@@ -69,25 +84,63 @@ export const loginHandler = async (
 
   if (correctPassword) {
     const { password, salt, ...rest } = user;
-    // generate access token
+    const publicIP = request.headers['public_ip']
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
+
+
+
+    /////////// user log ////////////
+    await userLog(request, true, user.email, user._id, user.name, ipAddress,body)
+    //////////// user log //////////
     return {
       accessToken: request.jwt.sign(rest),
       email: user.email,
       name: user.name,
     };
   }
-
-  return reply.code(401).send({
-    message: 'Invalid email or password',
-  });
+  else {
+    const publicIP = request.headers['public_ip']
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
+    //////////// user log //////////  
+    await userLog(request, false, user.email, user._id, user.name, ipAddress,body)
+    //////////// user log //////////
+    return reply.code(401).send({
+      message: 'Invalid email or password',
+    });
+  }
 };
-
 // @desc    Get all userss
 // @route   GET /user/
 // @access  Private
-export const getUsersHandler = async () => {
+export const getUsersHandler = async (request: FastifyRequest) => {
   const users = await findUsers();
 
+  if (!users) {
+
+
+    /////////// user log ////////////
+    // await userLog(request, false)
+  } else {
+    const token = request.headers.authorization;
+
+    if (token) {
+
+      const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload
+
+      console.log(decoded);
+      const { email, name, _id } = decoded._doc;
+      ////////user log///////////
+      // await userLog(request, true, email, _id, name)
+
+    } else {
+      console.error('Authorization header is missing');
+    }
+
+    // await userLog(request, true)
+  }
+  //////////// user log //////////
   return users;
 };
 

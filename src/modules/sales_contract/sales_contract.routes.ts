@@ -16,7 +16,15 @@ import {
   tempContractHandler,
   getSalesContractsWithPaginatonHandler,
   findSalesContractDtlsByDatePrintHandler,
-  Salecontract_drop_downHandler
+  Salecontract_drop_downHandler,
+  findNotShipmentSalesContractHandler,
+  findNotShipmentSalesContractHandler_new,
+  Dashboard_details_groupsHandler,
+  findPendingSalesContractDtlsByDateHandler,
+  findPendingSalesContractDtlsByDatePrintHandler,
+  findPendingInvoiceDtlsByDateHandler,
+  findPendingInvoiceDtlsByDatePrintHandler,
+  PendingContractBalanceCloseHandler,
 
   // findSalesContractDtlsByProductDateHandler,
 } from './sales_contract.controller';
@@ -40,7 +48,6 @@ const salesContractRoutes = async (server: FastifyInstance) => {
     },
     createSalesContractHandler
   );
-  
 
   server.get(
     '/id',
@@ -61,7 +68,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
       schema: {
         tags: ['Sales Contract'],
         security: [{ bearerToken: [] }],
-       //  body: $ref('saleContractReportProductSchema'),
+        //  body: $ref('saleContractReportProductSchema'),
         // response: {
         //   200: $ref('getSalesContractsSchema'),
         // },
@@ -77,7 +84,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
       schema: {
         tags: ['Sales Contract'],
         security: [{ bearerToken: [] }],
-         body: $ref('saleContractReportProductSchema'),
+        body: $ref('saleContractReportProductSchema'),
         // response: {
         //   200: $ref('getSalesContractsSchema'),
         // },
@@ -182,7 +189,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
 
     findSalesContractDtlsByDateHandler
   );
-  
+
   server.post(
     '/details/dtl/dtl-by-date-sales-contract-print',
     {
@@ -196,19 +203,6 @@ const salesContractRoutes = async (server: FastifyInstance) => {
 
     findSalesContractDtlsByDatePrintHandler
   );
-  
-
-
-
-
-
-
-
-
-
-
-
-
 
   server.delete(
     '/:id',
@@ -270,6 +264,20 @@ const salesContractRoutes = async (server: FastifyInstance) => {
     findIsDeletedDtlsByDateHandler
   );
 
+  server.post(
+    '/not-shipment-new',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('salecontractdrop_downSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findNotShipmentSalesContractHandler_new
+  );
+
   server.get(
     '/not-shipment',
     {
@@ -282,7 +290,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
         // },
       },
     },
-    findNotShipmentSalesContract
+    findNotShipmentSalesContractHandler
   );
 
   //   server.post(
@@ -313,8 +321,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
       },
     },
     getSalesContractsAdmdenimHandler
-  )
-
+  );
 
   server.post(
     '/invoice_no/test',
@@ -331,10 +338,7 @@ const salesContractRoutes = async (server: FastifyInstance) => {
     },
     tempContractHandler
   );
-  
-  
-  
-  
+
   server.post(
     '/dropdown',
     {
@@ -350,16 +354,86 @@ const salesContractRoutes = async (server: FastifyInstance) => {
     },
     Salecontract_drop_downHandler
   );
-  
-  
-  
-  
-  
-  
-  ;
+  server.post(
+    '/Dashboard/grouping',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        security: [{ bearerToken: [] }],
+        body: $ref('dashboardDetailsGroupSchema'),
+        response: {
+          201: $ref('dashboardDetailsGroupSchema'),
+        },
+      },
+    },
+    Dashboard_details_groupsHandler
+  );
+  server.post(
+    '/details/dtl/dtl-by-date-sales-contract-pending',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('saleContractReportSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findPendingSalesContractDtlsByDateHandler
+  );
+  server.post(
+    '/details/dtl/dtl-by-date-sales-contract-pending-Print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('salesContractPrintSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findPendingSalesContractDtlsByDatePrintHandler
+  );
+
+  server.post(
+    '/details/dtl/dtl-by-date-invoice-dtl-pending',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('saleContractReportSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findPendingInvoiceDtlsByDateHandler
+  );
+  server.post(
+    '/details/dtl/dtl-by-date-invoice-dtl-pending-print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('salesContractPrintSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findPendingInvoiceDtlsByDatePrintHandler
+  );
+  server.put(
+    '/details/dtl/dtl-pending-contract-balance-close',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Sales Contract'],
+        body: $ref('pendingContractBalanceSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+    PendingContractBalanceCloseHandler
+  );
 };
-
-
-
 
 export default salesContractRoutes;

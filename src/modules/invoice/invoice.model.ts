@@ -38,6 +38,11 @@ export class Invoice {
     default: 1,
   })
   salesTaxInvoiceNo: string;
+  @prop({
+    type: Boolean,
+    default: false,
+  })
+  adm_invoice: boolean;
 }
 
 export const InvoiceModel = getModelForClass(Invoice, {

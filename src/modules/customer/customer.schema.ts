@@ -55,6 +55,7 @@ const newCustomerId = z.object({
 const customerpageSchema = z.object({
   pageno: z.number(),
   perPage: z.number(),
+  name:z.string()
 });
 
 

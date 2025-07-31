@@ -3,6 +3,7 @@ import {
   createCountryHandler,
   deleteCountriesHandler,
   deleteCountryByIdHandler,
+  getCountriesHandlePagination,
   getCountriesHandler,
   getNewCountryIdHandler,
   updateCountryByIdHandler,
@@ -38,6 +39,21 @@ const countryRoutes = async (server: FastifyInstance) => {
     getNewCountryIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Country'],
+        security: [{ bearerToken: [] }],
+        body: $ref('countryPaginationSchema'),
+        // response: {
+        //   200: $ref('getCountrysSchema'),
+        // },
+      },
+    },
+    getCountriesHandlePagination
+  );
   server.get(
     '/',
     {

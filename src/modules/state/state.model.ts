@@ -9,6 +9,7 @@ export class State {
 
   @prop({
     type: String,
+    unique:true
   })
   name: string;
   @prop({

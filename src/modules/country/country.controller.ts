@@ -1,14 +1,27 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { CreateCountrySchema } from './country.schema';
+import { CountryPaginationSchema, CreateCountrySchema } from './country.schema';
 import {
   createCountry,
   deleteCountries,
   deleteCountryById,
   findCountries,
+  findCountriesPagination,
   getNewCountryId,
   updateCountryById,
 } from './country.service';
+import { userLog } from '../../user_histroy/userhistroy.service';
+import { ObjectId } from 'mongoose';
 
+
+interface DecodedPayload {
+  _doc: {
+    email: string;
+    name: string;
+    _id: ObjectId;
+
+
+  };
+}
 // @desc    Create new country
 // @route   POST /country/
 // @access  Private
@@ -19,13 +32,45 @@ export const createCountryHandler = async (
   reply: FastifyReply
 ) => {
   const body = request.body;
-
+  let token: string | undefined;
+  let country;
   try {
-    const country = await createCountry(body);
+     country = await createCountry(body);
+ 
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip']
 
-    return reply.code(201).send(country);
-  } catch (e) {
-    return reply.code(400).send(e);
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!country) {
+      console.error('Failed to create country!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to create country!' });
+    }
+    else if (country === 'Country already exists with this name in a case-sensitive manner.') {
+      return reply.code(400).send({ message: 'Country already exists' });
+    } 
+    else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(201).send(country);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error)
+    return reply.code(400).send({ error: 'An error occurred' });
+
   }
 };
 
@@ -44,6 +89,16 @@ export const getNewCountryIdHandler = async (
 // @desc    Get all countrys
 // @route   GET /country/
 // @access  Private
+export const getCountriesHandlePagination = async (
+  request: FastifyRequest<{
+    Body:CountryPaginationSchema;
+  }>,
+  ) => {
+  const body = request.body
+  const country = await findCountriesPagination(body);
+
+  return country;
+};
 export const getCountriesHandler = async () => {
   const countrys = await findCountries();
 
@@ -69,10 +124,44 @@ export const deleteCountryByIdHandler = async (
   reply: FastifyReply
 ) => {
   const params = request.params;
-  const countries = await deleteCountryById(params['id']);
+  let token: string | undefined;
+  let country;
+  try {
+    country = await deleteCountryById(params['id']);
+  token = request.headers.authorization;
+  const publicIP = request.headers['public_ip']
 
-  return countries;
-};
+  type publicIP = string | undefined;
+  const ipAddress: IpAddress = publicIP;
+
+  if (!token) {
+    console.error('Authorization header is missing');
+    return reply.code(400).send({ error: 'Authorization header is missing' });
+  }
+
+  const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+  const { email, name, _id } = decoded._doc;
+
+  if (!country) {
+    console.error('Failed to delete country!');
+    //////////// user log //////////
+    await userLog(request, false, email, _id, name, ipAddress,params);
+    //////////// user log //////////
+    return reply.code(400).send({ error: 'Failed to delete country!' });
+  } else {
+    //////////// user log //////////
+    await userLog(request, true, email, _id, name, ipAddress,params);
+    //////////// user log //////////
+    return reply.code(201).send(country);
+  }
+} catch (error) {
+  console.error('An error occurred:', error)
+  return reply.code(400).send({ error: 'An error occurred' });
+
+}
+
+}
+
 
 // @desc    Update country by id
 // @route   PUT /country/:id
@@ -86,8 +175,41 @@ export const updateCountryByIdHandler = async (
 ) => {
   const params = request.params;
   const body = request.body;
+  let token: string | undefined;
+  let country;
+  try {
+   country = await updateCountryById(params['id'], body.name);
+  token = request.headers.authorization;
+  const publicIP = request.headers['public_ip']
 
-  const countries = await updateCountryById(params['id'], body.name);
+  type publicIP = string | undefined;
+  const ipAddress: IpAddress = publicIP;
 
-  return countries;
+  if (!token) {
+    console.error('Authorization header is missing');
+    return reply.code(400).send({ error: 'Authorization header is missing' });
+  }
+
+  const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+  const { email, name, _id } = decoded._doc;
+
+  if (!country) {
+    console.error('Failed to update country!');
+    //////////// user log //////////
+    await userLog(request, false, email, _id, name, ipAddress,body);
+    //////////// user log //////////
+    return reply.code(400).send({ error: 'Failed to update country!' });
+  } else {
+    //////////// user log //////////
+    await userLog(request, true, email, _id, name, ipAddress, body);
+    //////////// user log //////////
+    return reply.code(201).send(country);
+  }
+} catch (error) {
+  console.error('An error occurred:', error)
+  return reply.code(400).send({ error: 'An error occurred' });
+
+}
+
+
 };

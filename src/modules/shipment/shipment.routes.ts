@@ -13,7 +13,10 @@ import {
   findSalesContractsWithShipmentHandler,
   findShipmentDtlsHandler,
   findShipmentcustomerHandler,
-  findShipmentDtlsByDatePrintHandler
+  findShipmentDtlsByDatePrintHandler,
+  findNetShipmentDtlsByDateHandler,
+  findNetShipmentDtlsByDatePrintHandler,
+  
 } from './shipment.controller';
 import { $ref } from './shipment.schema';
 import { ShipmentReportSchema } from './shipment.schema';
@@ -228,6 +231,35 @@ const shipmentRoutes = async (server: FastifyInstance) => {
 
     findShipmentcustomerHandler
   );
+  server.post(
+    '/details/dtl/dtl-by-date-Net-Shipment-Dtls',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Shipment'],
+        body: $ref('shipmentReportSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findNetShipmentDtlsByDateHandler
+  );
+
+  server.post(
+    '/details/dtl/dtl-by-date-Net-Shipment-Dtls-Print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Shipment'],
+        body: $ref('shipmentprintSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    findNetShipmentDtlsByDatePrintHandler
+  );
+
+  
 };
 
 export default shipmentRoutes;

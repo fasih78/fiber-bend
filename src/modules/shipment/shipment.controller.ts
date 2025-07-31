@@ -1,5 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { CreateShipmentSchema, ShipmentPrintSchema, ShipmentgroupSchema, ShipmentpaginationSchema } from './shipment.schema';
+import {  CreateShipmentSchema, ShipmentPrintSchema, ShipmentgroupSchema, ShipmentpaginationSchema } from './shipment.schema';
 import { ShipmentReportSchema } from './shipment.schema';
 import {
   createShipment,
@@ -16,11 +16,25 @@ import {
   ShipmrntdtlsforPrint,
   // findShipmentDetail,
   findShipmentDtls,
+  findNetShipmentDtlsByDate,
+  findNetShipmentDtlsByDatePrint,
+  
 } from './shipment.service';
+import { ObjectId } from 'mongoose';
+import { userLog } from '../../user_histroy/userhistroy.service';
 
 // @desc    Create new shipment
 // @route   POST /shipment/
 // @access  Private
+interface DecodedPayload {
+  _doc: {
+    email: string;
+    name: string;
+    _id: ObjectId;
+
+
+  };
+}
 export const createShipmentHandler = async (
   request: FastifyRequest<{
     Body: CreateShipmentSchema;
@@ -28,12 +42,45 @@ export const createShipmentHandler = async (
   reply: FastifyReply
 ) => {
   const body = request.body;
+  let token: string | undefined;
+  let shipment;
   try {
-    const shipment = await createShipment(body);
+    shipment = await createShipment(body);
+console.log(shipment);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip']
 
-    return reply.code(201).send(shipment);
-  } catch (e) {
-    return reply.code(400).send(e);
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!shipment) {
+      console.error('Failed to create shipment!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to create shipment!' });
+    }
+    else if(shipment === 'Shipmentdtl Total Qty Is Greater Than SalesContractdtl Total Qty'){
+      return reply.code(400).send({ error: 'Shipmentdtl Total Qty Is Greater Than SalesContractdtl Total Qty!' });
+    } 
+    else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(201).send(shipment);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error)
+    return reply.code(400).send({ error: 'An error occurred' });
+
   }
 };
 
@@ -59,10 +106,10 @@ export const ShipmentPaginationHandler = async (
   reply: FastifyReply
 ) => {
   const body = request.body;
-  
-    const shipment = await findShipments(body);
-return shipment
-  
+
+  const shipment = await findShipments(body);
+  return shipment
+
 };
 
 // @desc    Delete shipment by id
@@ -75,9 +122,42 @@ export const deleteShipmentByIdHandler = async (
   reply: FastifyReply
 ) => {
   const params = request.params;
-  const shipments = await deleteShipmentById(params['id']);
+  let token: string | undefined;
+  let shipment;
+  try {
+    shipment = await deleteShipmentById(params['id']);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip']
 
-  return shipments;
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
+
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!shipment) {
+      console.error('Failed to delete shipment!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress,params);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to delete shipment!' });
+    } else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress,params);
+      //////////// user log //////////
+      return reply.code(201).send(shipment);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error)
+    return reply.code(400).send({ error: 'An error occurred' });
+
+  }
+
 };
 
 // @desc    Update shipment by id
@@ -92,10 +172,50 @@ export const updateShipmentByIdHandler = async (
 ) => {
   const params = request.params;
   const body = request.body;
+  let token: string | undefined;
+  let shipment;
+  try {
+    shipment = await updateShipmentById(params['id'], body);
+    token = request.headers.authorization;
+    const publicIP = request.headers['public_ip']
 
-  const shipments = await updateShipmentById(params['id'], body);
+    type publicIP = string | undefined;
+    const ipAddress: IpAddress = publicIP;
 
-  return shipments;
+    if (!token) {
+      console.error('Authorization header is missing');
+      return reply.code(400).send({ error: 'Authorization header is missing' });
+    }
+
+    const decoded = request.jwt.decode(token.split(" ")[1]) as DecodedPayload;
+    const { email, name, _id } = decoded._doc;
+
+    if (!shipment) {
+      console.error('Failed to update shipment!');
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Failed to update shipment!' });
+    }
+    else if(shipment === 'Shipmentdtl Total Qty Is Greater Than SalesContractdtl Total Qty'){
+      //////////// user log //////////
+      await userLog(request, false, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(400).send({ error: 'Shipmentdtl Total Qty Is Greater Than SalesContractdtl Total Qty!' });
+    } 
+    else {
+      //////////// user log //////////
+      await userLog(request, true, email, _id, name, ipAddress,body);
+      //////////// user log //////////
+      return reply.code(201).send(shipment);
+    }
+  } catch (error) {
+    console.error('An error occurred:', error)
+    return reply.code(400).send({ error: 'An error occurred' });
+
+  }
+
+
 };
 
 export const findShipmentDtlsByDateHandler = async (
@@ -178,5 +298,29 @@ export const findShipmentcustomerHandler = async (
   console.log(body);
   const shipmentsDtls = await Productgroupby(body);
   console.log(shipmentsDtls);
+  return shipmentsDtls;
+};
+export const findNetShipmentDtlsByDateHandler = async (
+  request: FastifyRequest<{
+    Body: ShipmentReportSchema;
+  }>,
+  reply: FastifyReply
+) => {
+  const body = request.body;
+
+  const shipmentsDtls = await findNetShipmentDtlsByDate(body);
+
+  return shipmentsDtls;
+};
+export const findNetShipmentDtlsByDatePrintHandler = async (
+  request: FastifyRequest<{
+    Body: ShipmentReportSchema;
+  }>,
+  reply: FastifyReply
+) => {
+  const body = request.body;
+
+  const shipmentsDtls = await findNetShipmentDtlsByDatePrint(body);
+
   return shipmentsDtls;
 };

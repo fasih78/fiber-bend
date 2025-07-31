@@ -4,6 +4,7 @@ import {
   deleteCitiesHandler,
   deleteCityByIdHandler,
   getCitiesHandler,
+  getCitiesHandlerPagination,
   getNewCityIdHandler,
   updateCityByIdHandler,
 } from './city.controller';
@@ -38,6 +39,21 @@ const cityRoutes = async (server: FastifyInstance) => {
     getNewCityIdHandler
   );
 
+  server.post(
+    '/pagination',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['City'],
+        security: [{ bearerToken: [] }],
+        body:$ref('cityPaginationSchema')
+        // response: {
+        //   200: $ref('getCitysSchema'),
+        // },
+      },
+    },
+    getCitiesHandlerPagination
+  );
   server.get(
     '/',
     {
@@ -52,7 +68,6 @@ const cityRoutes = async (server: FastifyInstance) => {
     },
     getCitiesHandler
   );
-
   server.delete(
     '/all',
     {

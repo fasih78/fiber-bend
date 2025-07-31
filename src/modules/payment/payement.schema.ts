@@ -22,15 +22,24 @@ const paymentReportSchema = z.object({
 const paymentpageSchema = z.object({
   pageno: z.number(),
   perPage: z.number(),
+  contract:z.string()
 });
+const extrapaymentdrop_downSchema = z.object({
+  limit:z.number().optional(),
+  salesTaxInvoiceNo:z.string().optional(),
+record:z.boolean().optional()
+  
+  })
 
 export type PaymentReportSchema = z.infer<typeof paymentReportSchema>;
 export type PaymentPaginationSchema = z.infer<typeof paymentpageSchema>;
+export type ExtraPaymentDropDownSchema = z.infer<typeof extrapaymentdrop_downSchema>;
 export const { schemas: payementSchema, $ref } = buildJsonSchemas(
   {
     createPaymentSchema,
     paymentReportSchema,
     paymentpageSchema,
+    extrapaymentdrop_downSchema
   },
   { $id: 'payementSchema' }
 );

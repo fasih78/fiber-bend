@@ -1,6 +1,6 @@
 import { getModelForClass, prop, Ref } from '@typegoose/typegoose';
 import { SalesContractModel } from '../sales_contract/sales_contract.model';
-import { date, string } from 'zod';
+import { boolean, date, string } from 'zod';
 
 export class Shipment {
   @prop({
@@ -43,6 +43,10 @@ export class Shipment {
   //   type: Date,
   // })
   // strdc: Date;
+  @prop({
+    type: String,
+  })
+  contract: string;
 
   @prop({ ref: () => SalesContractModel })
   salesContract: Ref<typeof SalesContractModel>;
@@ -56,6 +60,19 @@ export class Shipment {
     type: Number,
   })
   shippedQty: number;
+
+  @prop({
+    type: Boolean,
+    default:false
+  })
+  adm_ship: boolean;
+
+  @prop({
+    type: Boolean,
+    default:false
+  })
+  return: boolean;
+
 }
 
 export const ShipmentModel = getModelForClass(Shipment, {

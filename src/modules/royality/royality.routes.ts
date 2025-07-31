@@ -17,7 +17,9 @@ import {
   findRoyalityAdmdenimByDateHandler,
   getNewRoyalityAdmDenimIdHandler,
   RoyalityReportDtlwithAdmDenimHandler,
-  RoyalityReportDtlPrintHandler
+  RoyalityReportDtlPrintHandler,
+  RoyalityReportDtlNetwithAdmDenimHandler,
+  RoyalityReportDtlNetPrintHandler
 } from './royality.controller';
 
 export const royalityRoutes = async (server: FastifyInstance) => {
@@ -60,7 +62,7 @@ export const royalityRoutes = async (server: FastifyInstance) => {
       schema: {
         tags: ['Royality'],
         security: [{ bearerToken: [] }],
-        body:$ref('royalitypageSchema')
+        body: $ref('royalitypageSchema')
         // response: {
         //   200: $ref('createPaymentSchema'),
         // },
@@ -98,7 +100,7 @@ export const royalityRoutes = async (server: FastifyInstance) => {
           },
         },
         security: [{ bearerToken: [] }],
-        body: $ref('createRoyalitySchema'),
+        body: $ref('updateRoyalitySchema'),
         // response: {
         //   200: $ref('createPaymentSchema'),
         // },
@@ -280,6 +282,34 @@ export const royalityRoutes = async (server: FastifyInstance) => {
     },
 
     RoyalityReportDtlPrintHandler
+  );
+
+  server.post(
+    '/details/dtl/dtl-by-date-Royality-Dtls-Net-full-option',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Royality'],
+        body: $ref('royalityReportSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+RoyalityReportDtlNetwithAdmDenimHandler  
+);
+  server.post(
+    '/details/dtl/dtl-by-date-Royality-Dtls-Net-print',
+    {
+      preHandler: [server.authenticate],
+      schema: {
+        tags: ['Royality'],
+        body: $ref('royalityReportPrintSchema'),
+        security: [{ bearerToken: [] }],
+      },
+    },
+
+    RoyalityReportDtlNetPrintHandler
+
   );
 
 

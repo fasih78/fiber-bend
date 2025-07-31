@@ -6,6 +6,7 @@ import { PaymentTermModel } from '../payment_term/payment_term.model';
 import { ProductModel } from '../product/product.model';
 import { SalesContractDtlModel } from './sales_contract_dtl.model';
 import { ShipViaModel } from '../shipvia/shipvia.model';
+import { boolean } from 'zod';
 //import { InvoiceModel } from '../invoice/invoice.model';
 // @pre<SalesContract>('findOneAndDelete', async function () {
 //   const instance = (await this) as SalesContract;
@@ -52,9 +53,9 @@ export class SalesContract {
 
   @prop({
     type: Boolean,
-    default: false,
   })
   invoice: boolean;
+  
 
   @prop({
     type: Boolean,
@@ -82,14 +83,33 @@ export class SalesContract {
 
   @prop({
     type: Boolean,
-    default: false,
   })
   shipment: boolean;
   @prop({
     type: Boolean,
-    default:false
   })
   royality: boolean;
+
+  @prop({
+    type: Boolean,
+    default: false,
+  })
+  InHouse: boolean;
+
+  @prop({
+    type: Boolean,
+  })
+  royality_nonadm: boolean;
+  
+  @prop({
+    type: String,
+  })
+  order_status: string;
+
+  @prop({
+    type:Boolean
+  })
+  royality_approval:boolean
   // royality for other than adm denim but only for group qty purpose of adm denim"
   @prop({ ref: () => CustomerModel })
   customer: Ref<typeof CustomerModel>;
